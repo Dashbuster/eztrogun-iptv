@@ -773,6 +773,10 @@ button {
   gap: 14px;
 }
 
+.media-grid-large {
+  gap: 20px;
+}
+
 .media-card {
   width: 100%;
   min-width: 0;
@@ -784,6 +788,11 @@ button {
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.04);
   color: var(--ink);
+}
+
+.media-card-large {
+  gap: 16px;
+  padding: 16px;
 }
 
 .media-card-poster {
@@ -827,6 +836,36 @@ button {
 .media-card-copy span,
 .media-card-copy small {
   color: var(--muted);
+}
+
+.media-card-large .media-card-copy strong {
+  font-size: 1.02rem;
+}
+
+.series-season-block {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.series-season-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.series-season-header span {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.series-episode-list {
+  display: grid;
+  gap: 10px;
 }
 
 .media-card.active,

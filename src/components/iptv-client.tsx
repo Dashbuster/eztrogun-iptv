@@ -16,6 +16,7 @@ import type { IPTVChannel } from "@/lib/iptv";
 import { IPTVPlayer } from "./iptv-player";
 
 type CatalogTab = "live" | "movie" | "series";
+type HomePanel = "none" | "settings" | "playlists" | "catalog";
 type AccessProfile = {
   code: string;
   username: string;
@@ -34,6 +35,19 @@ type IndexedChannel = IPTVChannel & {
   searchValue: string;
   storageId: string;
 };
+type SeriesSeason = {
+  seasonNumber: number | null;
+  label: string;
+  episodes: IndexedChannel[];
+};
+type SeriesEntry = {
+  key: string;
+  title: string;
+  group: string;
+  logo?: string;
+  episodes: IndexedChannel[];
+  seasons: SeriesSeason[];
+};
 
 const FAVORITES_STORAGE_KEY = "iptv:favorites";
 const RECENT_STORAGE_KEY = "iptv:recent";
@@ -42,8 +56,86 @@ const PLAYLISTS_STORAGE_KEY = "iptv:saved-playlists";
 const CHANNEL_ROW_HEIGHT = 86;
 const CHANNEL_LIST_HEIGHT = 540;
 const CHANNEL_LIST_OVERSCAN = 8;
-const MEDIA_GRID_CARD_HEIGHT = 308;
+const MEDIA_GRID_CARD_HEIGHT = 468;
 const MEDIA_GRID_OVERSCAN = 2;
+
+function normalizeSearchValue(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function extractSeriesMeta(name: string) {
+  const matchers = [
+    /^(.*?)[\s._-]+S(\d{1,2})E(\d{1,3})(?:\b|[\s._-]|$)/i,
+    /^(.*?)[\s._-]+(\d{1,2})x(\d{1,3})(?:\b|[\s._-]|$)/i,
+    /^(.*?)[\s._-]+temporada[\s._-]*(\d{1,2})[\s._-]+epis(?:odio|ódio)[\s._-]*(\d{1,3})(?:\b|[\s._-]|$)/i
+  ];
+
+  for (const pattern of matchers) {
+    const match = name.match(pattern);
+
+    if (!match) {
+      continue;
+    }
+
+    const seriesTitle = match[1].replace(/[\s._-]+$/g, "").trim() || name.trim();
+    const seasonNumber = Number.parseInt(match[2], 10);
+    const episodeNumber = Number.parseInt(match[3], 10);
+
+    return {
+      seriesTitle,
+      seasonNumber,
+      episodeNumber
+    };
+  }
+
+  return {
+    seriesTitle: name.trim(),
+    seasonNumber: null,
+    episodeNumber: null
+  };
+}
+
+function getSeriesKey(channel: IPTVChannel) {
+  const meta = extractSeriesMeta(channel.name);
+  return `${channel.group}::${normalizeSearchValue(meta.seriesTitle)}`;
+}
+
+function getSeriesSeasonLabel(seasonNumber: number | null) {
+  if (seasonNumber === null) {
+    return "Extras";
+  }
+
+  return `Temporada ${seasonNumber}`;
+}
+
+function getSeriesEpisodeLabel(channel: IPTVChannel) {
+  const meta = extractSeriesMeta(channel.name);
+
+  if (meta.seasonNumber !== null && meta.episodeNumber !== null) {
+    return `T${String(meta.seasonNumber).padStart(2, "0")}E${String(meta.episodeNumber).padStart(2, "0")}`;
+  }
+
+  return getItemLabel(channel);
+}
+
+function getPanelTitle(panel: HomePanel) {
+  if (panel === "settings") {
+    return "Settings";
+  }
+
+  if (panel === "playlists") {
+    return "Playlists";
+  }
+
+  if (panel === "catalog") {
+    return "Catalogo";
+  }
+
+  return "Inicio";
+}
 
 function getChannelStorageId(channel: IPTVChannel) {
   return `${channel.name}::${channel.url}`;
@@ -176,8 +268,10 @@ export function IPTVClient() {
   const [query, setQuery] = useState("");
   const [activeGroup, setActiveGroup] = useState("all");
   const [activeTab, setActiveTab] = useState<CatalogTab>("live");
+  const [activePanel, setActivePanel] = useState<HomePanel>("none");
+  const [activeSeriesKey, setActiveSeriesKey] = useState<string | null>(null);
   const [listScrollTop, setListScrollTop] = useState(0);
-  const [gridColumns, setGridColumns] = useState(4);
+  const [gridColumns, setGridColumns] = useState(3);
 
   useEffect(() => {
     writeStorage(FAVORITES_STORAGE_KEY, favoriteIds);
@@ -217,17 +311,12 @@ export function IPTVClient() {
         return;
       }
 
-      if (window.innerWidth < 980) {
+      if (window.innerWidth < 1120) {
         setGridColumns(2);
         return;
       }
 
-      if (window.innerWidth < 1320) {
-        setGridColumns(3);
-        return;
-      }
-
-      setGridColumns(4);
+      setGridColumns(3);
     };
 
     updateGridColumns();
@@ -300,23 +389,108 @@ export function IPTVClient() {
   const categoryEntries = useMemo(() => {
     const counts = new Map<string, number>();
 
+    if (activeTab === "series") {
+      const groupTitles = new Map<string, Set<string>>();
+
+      for (const channel of tabChannels) {
+        const title = extractSeriesMeta(channel.name).seriesTitle;
+        const collection = groupTitles.get(channel.group) || new Set<string>();
+
+        collection.add(normalizeSearchValue(title));
+        groupTitles.set(channel.group, collection);
+      }
+
+      return [...groupTitles.entries()].map(([group, titles]) => ({ group, count: titles.size }));
+    }
+
     for (const channel of tabChannels) {
       counts.set(channel.group, (counts.get(channel.group) || 0) + 1);
     }
 
     return [...counts.entries()].map(([group, count]) => ({ group, count }));
-  }, [tabChannels]);
+  }, [activeTab, tabChannels]);
 
   const filteredChannels = useMemo(() => {
-    const normalizedQuery = deferredQuery.trim().toLowerCase();
+    const normalizedQuery = normalizeSearchValue(deferredQuery.trim());
 
     return tabChannels.filter((channel) => {
       const matchesGroup = activeGroup === "all" || channel.group === activeGroup;
-      const matchesQuery = !normalizedQuery || channel.searchValue.includes(normalizedQuery);
+      const seriesTitle = channel.catalog === "series" ? extractSeriesMeta(channel.name).seriesTitle : "";
+      const matchesQuery =
+        !normalizedQuery ||
+        channel.searchValue.includes(normalizedQuery) ||
+        normalizeSearchValue(seriesTitle).includes(normalizedQuery);
 
       return matchesGroup && matchesQuery;
     });
   }, [activeGroup, deferredQuery, tabChannels]);
+
+  const seriesEntries = useMemo(() => {
+    const seriesMap = new Map<
+      string,
+      {
+        title: string;
+        group: string;
+        logo?: string;
+        episodes: IndexedChannel[];
+        seasons: Map<number | null, IndexedChannel[]>;
+      }
+    >();
+
+    for (const channel of filteredChannels) {
+      if (channel.catalog !== "series") {
+        continue;
+      }
+
+      const meta = extractSeriesMeta(channel.name);
+      const key = `${channel.group}::${normalizeSearchValue(meta.seriesTitle)}`;
+      const current =
+        seriesMap.get(key) ||
+        {
+          title: meta.seriesTitle,
+          group: channel.group,
+          logo: channel.logo,
+          episodes: [],
+          seasons: new Map<number | null, IndexedChannel[]>()
+        };
+
+      current.logo ||= channel.logo;
+      current.episodes.push(channel);
+      current.seasons.set(meta.seasonNumber, [...(current.seasons.get(meta.seasonNumber) || []), channel]);
+      seriesMap.set(key, current);
+    }
+
+    return [...seriesMap.entries()]
+      .map(([key, value]) => ({
+        key,
+        title: value.title,
+        group: value.group,
+        logo: value.logo,
+        episodes: value.episodes.sort((left, right) => left.name.localeCompare(right.name, "pt-BR")),
+        seasons: [...value.seasons.entries()]
+          .sort(([left], [right]) => {
+            if (left === null) {
+              return 1;
+            }
+
+            if (right === null) {
+              return -1;
+            }
+
+            return left - right;
+          })
+          .map(([seasonNumber, episodes]) => ({
+            seasonNumber,
+            label: getSeriesSeasonLabel(seasonNumber),
+            episodes: [...episodes].sort((left, right) => left.name.localeCompare(right.name, "pt-BR"))
+          }))
+      }))
+      .sort((left, right) => left.title.localeCompare(right.title, "pt-BR"));
+  }, [filteredChannels]);
+
+  const activeSeries = useMemo(() => {
+    return seriesEntries.find((entry) => entry.key === activeSeriesKey) || null;
+  }, [activeSeriesKey, seriesEntries]);
 
   const totalVirtualHeight = filteredChannels.length * CHANNEL_ROW_HEIGHT;
   const virtualStartIndex = Math.max(0, Math.floor(listScrollTop / CHANNEL_ROW_HEIGHT) - CHANNEL_LIST_OVERSCAN);
@@ -384,6 +558,29 @@ export function IPTVClient() {
     return getCatalogDescription(selectedChannel, currentProgram?.description);
   }, [currentProgram?.description, selectedChannel]);
 
+  useEffect(() => {
+    if (activeTab !== "series") {
+      setActiveSeriesKey(null);
+      return;
+    }
+
+    if (!seriesEntries.length) {
+      setActiveSeriesKey(null);
+      setSelectedId(null);
+      return;
+    }
+
+    const nextSeries = seriesEntries.find((entry) => entry.key === activeSeriesKey) || seriesEntries[0];
+
+    if (nextSeries.key !== activeSeriesKey) {
+      setActiveSeriesKey(nextSeries.key);
+    }
+
+    if (!nextSeries.episodes.some((episode) => episode.id === selectedId)) {
+      setSelectedId(nextSeries.episodes[0]?.id ?? null);
+    }
+  }, [activeSeriesKey, activeTab, selectedId, seriesEntries]);
+
   function rememberRecentChannel(channel: IPTVChannel | null) {
     if (!channel) {
       return;
@@ -394,7 +591,18 @@ export function IPTVClient() {
   }
 
   function selectChannel(channel: IPTVChannel | null) {
+    if (channel) {
+      setActivePanel("catalog");
+      setActiveTab(channel.catalog);
+      setActiveGroup(channel.group || getPreferredGroup(channels, channel.catalog));
+    }
+
     setSelectedId(channel?.id ?? null);
+
+    if (channel?.catalog === "series") {
+      setActiveSeriesKey(getSeriesKey(channel));
+    }
+
     rememberRecentChannel(channel);
   }
 
@@ -418,6 +626,7 @@ export function IPTVClient() {
     setStatus(nextStatus);
     setError(null);
     setActivePlaylistId(playlistId ?? null);
+    setActivePanel("catalog");
     setSelectedId(null);
   }
 
@@ -433,10 +642,12 @@ export function IPTVClient() {
   function switchTab(nextTab: CatalogTab) {
     const nextTabChannels = catalogIndex.byCatalog[nextTab];
     setActiveTab(nextTab);
+    setActivePanel("catalog");
     setActiveGroup(getPreferredGroup(nextTabChannels, nextTab));
     setQuery("");
     setListScrollTop(0);
     setSelectedId(null);
+    setActiveSeriesKey(null);
   }
 
   function toggleFavorite(channel: IPTVChannel) {
@@ -461,6 +672,16 @@ export function IPTVClient() {
     setPlaylistEpgUrl(playlist.epgUrl || "");
     setPlaylistInput(playlist.content || "");
     setEditingPlaylistId(playlist.id);
+    setActivePanel("playlists");
+  }
+
+  function openPanel(panel: HomePanel) {
+    setActivePanel(panel);
+  }
+
+  function openCatalogPanel(tab: CatalogTab) {
+    switchTab(tab);
+    setActivePanel("catalog");
   }
 
   async function validateAndParsePlaylist(rawContent: string) {
@@ -717,27 +938,47 @@ export function IPTVClient() {
         </div>
 
         <div className="launch-grid">
-          <button type="button" className={`launch-card ${activeTab === "live" ? "active" : ""}`} onClick={() => switchTab("live")}>
+          <button
+            type="button"
+            className={`launch-card ${activePanel === "catalog" && activeTab === "live" ? "active" : ""}`}
+            onClick={() => openCatalogPanel("live")}
+          >
             <span className="launch-icon">TV</span>
             <strong>Live TV</strong>
             <span>{catalogCounts.live} itens</span>
           </button>
-          <button type="button" className={`launch-card ${activeTab === "movie" ? "active" : ""}`} onClick={() => switchTab("movie")}>
+          <button
+            type="button"
+            className={`launch-card ${activePanel === "catalog" && activeTab === "movie" ? "active" : ""}`}
+            onClick={() => openCatalogPanel("movie")}
+          >
             <span className="launch-icon">MV</span>
             <strong>Movies</strong>
             <span>{catalogCounts.movie} itens</span>
           </button>
-          <button type="button" className={`launch-card ${activeTab === "series" ? "active" : ""}`} onClick={() => switchTab("series")}>
+          <button
+            type="button"
+            className={`launch-card ${activePanel === "catalog" && activeTab === "series" ? "active" : ""}`}
+            onClick={() => openCatalogPanel("series")}
+          >
             <span className="launch-icon">SR</span>
             <strong>Series</strong>
             <span>{catalogCounts.series} itens</span>
           </button>
-          <button type="button" className="launch-card" onClick={() => document.getElementById("playlists-panel")?.scrollIntoView({ behavior: "smooth" })}>
+          <button
+            type="button"
+            className={`launch-card ${activePanel === "playlists" ? "active" : ""}`}
+            onClick={() => openPanel("playlists")}
+          >
             <span className="launch-icon">PL</span>
             <strong>Playlists</strong>
             <span>{savedPlaylists.length} salvas</span>
           </button>
-          <button type="button" className="launch-card" onClick={() => document.getElementById("settings-panel")?.scrollIntoView({ behavior: "smooth" })}>
+          <button
+            type="button"
+            className={`launch-card ${activePanel === "settings" ? "active" : ""}`}
+            onClick={() => openPanel("settings")}
+          >
             <span className="launch-icon">ST</span>
             <strong>Settings</strong>
             <span>Acesso local</span>
@@ -762,11 +1003,20 @@ export function IPTVClient() {
 
       <section className="iptv-layout">
         <aside className="iptv-sidebar card">
-          <div id="settings-panel" className="panel-heading">
-            <h2>Settings</h2>
-            <p>Codigo, usuario e senha ficam salvos localmente neste navegador.</p>
+          <div className="panel-heading">
+            <h2>{getPanelTitle(activePanel)}</h2>
+            <p>
+              {activePanel === "settings"
+                ? "Codigo, usuario e senha ficam salvos localmente neste navegador."
+                : activePanel === "playlists"
+                  ? "Crie, edite, carregue e apague playlists sem depender de demos."
+                  : activePanel === "catalog"
+                    ? "Favoritos e recentes da aba atual."
+                    : "Escolha um card acima para abrir o painel desejado."}
+            </p>
           </div>
 
+          {activePanel === "settings" ? (
           <div className="credential-card">
             <label className="field">
               <span>Codigo</span>
@@ -802,11 +1052,10 @@ export function IPTVClient() {
               Salvar credenciais
             </button>
           </div>
+          ) : null}
 
-          <div id="playlists-panel" className="panel-heading">
-            <h2>Playlists</h2>
-            <p>Crie, edite, carregue e apague playlists sem depender de demos.</p>
-          </div>
+          {activePanel === "playlists" ? (
+          <>
 
           <div className="playlist-editor">
             <label className="field">
@@ -901,7 +1150,10 @@ export function IPTVClient() {
               </div>
             )}
           </div>
+          </>
+          ) : null}
 
+          {activePanel === "catalog" ? (
           <div className="sidebar-stack">
             <div className="mini-panel">
               <div className="mini-panel-header">
@@ -941,9 +1193,19 @@ export function IPTVClient() {
               )}
             </div>
           </div>
+          ) : null}
+
+          {activePanel === "none" ? (
+            <div className="empty-state">
+              <strong>Nenhum painel aberto.</strong>
+              <span>Use os cards da home para abrir catalogo, playlists ou settings.</span>
+            </div>
+          ) : null}
         </aside>
 
         <section className="iptv-main">
+          {activePanel === "catalog" ? (
+          <>
           <div className="card catalog-card">
             <div className="catalog-tabs">
               <button type="button" className={activeTab === "live" ? "active" : ""} onClick={() => switchTab("live")}>
@@ -1118,18 +1380,58 @@ export function IPTVClient() {
                     </div>
                   ) : null}
                   </div>
+                ) : activeTab === "series" ? (
+                  <div className="media-grid-shell">
+                    <div
+                      className="media-grid media-grid-large"
+                      style={{ gridTemplateColumns: `repeat(${gridColumns}, minmax(0, 1fr))` }}
+                    >
+                      {seriesEntries.map((entry) => (
+                        <button
+                          key={entry.key}
+                          type="button"
+                          className={`media-card media-card-large ${entry.key === activeSeries?.key ? "active" : ""}`}
+                          onClick={() => {
+                            setActiveSeriesKey(entry.key);
+                            setSelectedId(entry.episodes[0]?.id ?? null);
+                          }}
+                        >
+                          <div className="media-card-poster">
+                            {entry.logo ? (
+                              <img src={entry.logo} alt={entry.title} loading="lazy" />
+                            ) : (
+                              <span className="media-card-fallback">Serie</span>
+                            )}
+                          </div>
+                          <div className="media-card-copy">
+                            <strong>{entry.title}</strong>
+                            <span>{entry.group || "Sem categoria"}</span>
+                            <small>{entry.seasons.length} temporadas</small>
+                            <small>{entry.episodes.length} episodios</small>
+                          </div>
+                        </button>
+                      ))}
+
+                      {seriesEntries.length === 0 ? (
+                        <div className="empty-state">
+                          <strong>Nenhuma serie encontrada.</strong>
+                          <span>Troque de categoria ou refine a busca.</span>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
                 ) : (
                   <div className="media-grid-shell" onScroll={(event) => setListScrollTop(event.currentTarget.scrollTop)}>
                     <div style={{ height: mediaGridTopSpacerHeight }} aria-hidden="true" />
                     <div
-                      className="media-grid"
+                      className="media-grid media-grid-large"
                       style={{ gridTemplateColumns: `repeat(${gridColumns}, minmax(0, 1fr))` }}
                     >
                       {mediaGridVisibleChannels.map((channel) => (
                         <button
                           key={channel.id}
                           type="button"
-                          className={`media-card ${channel.id === selectedChannel?.id ? "active" : ""}`}
+                          className={`media-card media-card-large ${channel.id === selectedChannel?.id ? "active" : ""}`}
                           onClick={() => selectChannel(channel)}
                         >
                           <div className="media-card-poster">
@@ -1167,33 +1469,84 @@ export function IPTVClient() {
 
                 <div className="preview-summary">
                   <article>
-                    <span>Selecionado</span>
-                    <strong>{selectedChannel?.name || "Nenhum item"}</strong>
+                    <span>{activeTab === "series" ? "Serie" : "Selecionado"}</span>
+                    <strong>{activeTab === "series" ? activeSeries?.title || "Nenhuma serie" : selectedChannel?.name || "Nenhum item"}</strong>
                   </article>
                   <article>
                     <span>Categoria</span>
-                    <strong>{selectedChannel?.group || "Sem categoria"}</strong>
+                    <strong>{activeTab === "series" ? activeSeries?.group || "Sem categoria" : selectedChannel?.group || "Sem categoria"}</strong>
                   </article>
                   <article>
-                    <span>Formato</span>
-                    <strong>{selectedChannel?.type.toUpperCase() || "--"}</strong>
+                    <span>{activeTab === "series" ? "Temporadas" : "Formato"}</span>
+                    <strong>{activeTab === "series" ? String(activeSeries?.seasons.length || 0) : selectedChannel?.type.toUpperCase() || "--"}</strong>
                   </article>
                   <article>
-                    <span>Canal</span>
-                    <strong>{getChannelNumber(selectedChannel)}</strong>
+                    <span>{activeTab === "series" ? "Episodio atual" : "Canal"}</span>
+                    <strong>{activeTab === "series" ? selectedChannel?.name || "Nenhum episodio" : getChannelNumber(selectedChannel)}</strong>
                   </article>
                 </div>
 
-                <div className={`preview-poster ${selectedChannel?.logo ? "has-image" : ""} ${selectedChannel ? "" : "is-empty"}`}>
-                  {selectedChannel?.logo ? (
+                <div
+                  className={`preview-poster ${
+                    (activeTab === "series" ? activeSeries?.logo : selectedChannel?.logo) ? "has-image" : ""
+                  } ${
+                    activeTab === "series" ? (activeSeries ? "" : "is-empty") : selectedChannel ? "" : "is-empty"
+                  }`}
+                >
+                  {activeTab === "series" ? activeSeries?.logo ? (
+                    <img src={activeSeries.logo} alt={activeSeries.title} loading="lazy" />
+                  ) : null : selectedChannel?.logo ? (
                     <img src={selectedChannel.logo} alt={selectedChannel.name} loading="lazy" />
                   ) : null}
                   <div className="preview-overlay">
-                    <span>{getItemLabel(selectedChannel)}</span>
-                    <strong>{selectedChannel?.name || "Nenhum item"}</strong>
-                    <small>{selectedDescription}</small>
+                    <span>{activeTab === "series" ? "Serie" : getItemLabel(selectedChannel)}</span>
+                    <strong>{activeTab === "series" ? activeSeries?.title || "Nenhuma serie" : selectedChannel?.name || "Nenhum item"}</strong>
+                    <small>{activeTab === "series" ? `${activeSeries?.episodes.length || 0} episodios disponiveis` : selectedDescription}</small>
                   </div>
                 </div>
+
+                {activeTab === "series" ? (
+                  <div className="epg-panel">
+                    <div className="browser-titlebar">
+                      <strong>Temporadas</strong>
+                      <span>{activeSeries?.seasons.length || 0}</span>
+                    </div>
+
+                    <div className="timeline-list">
+                      {activeSeries ? (
+                        activeSeries.seasons.map((season) => (
+                          <article key={season.label} className="series-season-block">
+                            <div className="series-season-header">
+                              <strong>{season.label}</strong>
+                              <span>{season.episodes.length} episodios</span>
+                            </div>
+                            <div className="series-episode-list">
+                              {season.episodes.map((episode) => (
+                                <button
+                                  key={episode.id}
+                                  type="button"
+                                  className={`timeline-item ${episode.id === selectedChannel?.id ? "active" : ""}`}
+                                  onClick={() => selectChannel(episode)}
+                                >
+                                  <span className="timeline-dot" />
+                                  <div>
+                                    <strong>{episode.name}</strong>
+                                    <small>{getSeriesEpisodeLabel(episode)}</small>
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          </article>
+                        ))
+                      ) : (
+                        <div className="empty-state">
+                          <strong>Nenhuma serie selecionada.</strong>
+                          <span>Clique em um card para abrir as temporadas dentro dela.</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
 
                 {activeTab === "live" ? (
                   <div className="epg-panel">
@@ -1350,6 +1703,37 @@ export function IPTVClient() {
               </article>
             </div>
           </div>
+          </>
+          ) : (
+            <div className="card details-card">
+              <div className="detail-grid">
+                <article>
+                  <span>Painel ativo</span>
+                  <strong>{getPanelTitle(activePanel)}</strong>
+                </article>
+                <article>
+                  <span>Playlist ativa</span>
+                  <strong>{activePlaylist?.name || "Nenhuma"}</strong>
+                </article>
+                <article>
+                  <span>Status</span>
+                  <strong>{status}</strong>
+                </article>
+                <article>
+                  <span>Codigo ativo</span>
+                  <strong>{accessProfile.code.trim() || "Nao definido"}</strong>
+                </article>
+                <article>
+                  <span>Favoritos</span>
+                  <strong>{favoriteChannels.length}</strong>
+                </article>
+                <article>
+                  <span>Recentes</span>
+                  <strong>{recentChannels.length}</strong>
+                </article>
+              </div>
+            </div>
+          )}
         </section>
       </section>
     </main>
