@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { buildM3U, parseM3U, samplePlaylist } from "@/lib/iptv";
+import { buildM3U, parseM3U } from "@/lib/iptv";
 import type { IPTVChannel } from "@/lib/iptv";
 
 import { IPTVPlayer } from "./iptv-player";
@@ -13,16 +13,26 @@ type AccessProfile = {
   username: string;
   password: string;
 };
+type SavedPlaylist = {
+  id: string;
+  name: string;
+  url: string;
+  content: string;
+  source: "url" | "text";
+  updatedAt: string;
+};
 
-const SAMPLE_SOURCE = "sample://local";
-const PASTED_SOURCE = "manual://pasted";
 const FAVORITES_STORAGE_KEY = "iptv:favorites";
 const RECENT_STORAGE_KEY = "iptv:recent";
 const ACCESS_STORAGE_KEY = "iptv:access-profile";
-const initialChannels = parseM3U(samplePlaylist);
+const PLAYLISTS_STORAGE_KEY = "iptv:saved-playlists";
 
 function getChannelStorageId(channel: IPTVChannel) {
   return `${channel.name}::${channel.url}`;
+}
+
+function createPlaylistId() {
+  return `playlist-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function getEmptyAccessProfile(): AccessProfile {
@@ -55,7 +65,7 @@ function getItemLabel(channel: IPTVChannel | null) {
   }
 
   if (channel.catalog === "series") {
-    return "Episodio";
+    return "Serie";
   }
 
   return "Canal";
@@ -98,17 +108,31 @@ export function IPTVClient() {
       return getEmptyAccessProfile();
     }
   });
-  const [playlistInput, setPlaylistInput] = useState(samplePlaylist);
+  const [savedPlaylists, setSavedPlaylists] = useState<SavedPlaylist[]>(() => {
+    if (typeof window === "undefined") {
+      return [];
+    }
+
+    try {
+      const storedPlaylists = window.localStorage.getItem(PLAYLISTS_STORAGE_KEY);
+      return storedPlaylists ? (JSON.parse(storedPlaylists) as SavedPlaylist[]) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [playlistName, setPlaylistName] = useState("");
+  const [playlistInput, setPlaylistInput] = useState("");
   const [playlistUrl, setPlaylistUrl] = useState("");
-  const [channels, setChannels] = useState<IPTVChannel[]>(initialChannels);
-  const [selectedId, setSelectedId] = useState<string | null>(initialChannels[0]?.id ?? null);
-  const [status, setStatus] = useState("Playlist demo carregada.");
+  const [editingPlaylistId, setEditingPlaylistId] = useState<string | null>(null);
+  const [channels, setChannels] = useState<IPTVChannel[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [activePlaylistId, setActivePlaylistId] = useState<string | null>(null);
+  const [status, setStatus] = useState("Cadastre uma playlist para começar.");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
   const [activeGroup, setActiveGroup] = useState("all");
   const [activeTab, setActiveTab] = useState<CatalogTab>("live");
-  const [activeSource, setActiveSource] = useState(SAMPLE_SOURCE);
 
   useEffect(() => {
     window.localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(favoriteIds));
@@ -121,6 +145,10 @@ export function IPTVClient() {
   useEffect(() => {
     window.localStorage.setItem(ACCESS_STORAGE_KEY, JSON.stringify(accessProfile));
   }, [accessProfile]);
+
+  useEffect(() => {
+    window.localStorage.setItem(PLAYLISTS_STORAGE_KEY, JSON.stringify(savedPlaylists));
+  }, [savedPlaylists]);
 
   const catalogCounts = useMemo(() => {
     return {
@@ -153,11 +181,15 @@ export function IPTVClient() {
   const selectedChannel =
     filteredChannels.find((channel) => channel.id === selectedId) ||
     tabChannels.find((channel) => channel.id === selectedId) ||
+    channels.find((channel) => channel.id === selectedId) ||
     filteredChannels[0] ||
     tabChannels[0] ||
-    channels.find((channel) => channel.id === selectedId) ||
     channels[0] ||
     null;
+
+  const activePlaylist = useMemo(() => {
+    return savedPlaylists.find((playlist) => playlist.id === activePlaylistId) || null;
+  }, [activePlaylistId, savedPlaylists]);
 
   const favoriteChannels = useMemo(() => {
     const favorites = new Set(favoriteIds);
@@ -183,34 +215,27 @@ export function IPTVClient() {
     rememberRecentChannel(channel);
   }
 
-  function applyLoadedChannels(nextChannels: IPTVChannel[], source: string, nextStatus: string) {
-    const preferredTab = nextChannels.some((channel) => channel.catalog === activeTab)
-      ? activeTab
-      : nextChannels[0]?.catalog || "live";
-    const firstChannelForTab = nextChannels.find((channel) => channel.catalog === preferredTab) || nextChannels[0] || null;
+  function chooseInitialTab(nextChannels: IPTVChannel[]) {
+    if (nextChannels.some((channel) => channel.catalog === activeTab)) {
+      return activeTab;
+    }
+
+    return nextChannels[0]?.catalog || "live";
+  }
+
+  function applyLoadedChannels(nextChannels: IPTVChannel[], nextStatus: string, playlistId?: string | null) {
+    const preferredTab = chooseInitialTab(nextChannels);
+    const firstChannel =
+      nextChannels.find((channel) => channel.catalog === preferredTab) || nextChannels[0] || null;
 
     setChannels(nextChannels);
     setActiveTab(preferredTab);
     setActiveGroup("all");
     setQuery("");
-    setActiveSource(source);
     setStatus(nextStatus);
     setError(null);
-    selectChannel(firstChannelForTab);
-  }
-
-  function resetToDemo() {
-    applyLoadedChannels(initialChannels, SAMPLE_SOURCE, "Playlist demo recarregada.");
-    setPlaylistInput(samplePlaylist);
-    setPlaylistUrl("");
-  }
-
-  function toggleFavorite(channel: IPTVChannel) {
-    const channelId = getChannelStorageId(channel);
-
-    setFavoriteIds((current) =>
-      current.includes(channelId) ? current.filter((item) => item !== channelId) : [channelId, ...current]
-    );
+    setActivePlaylistId(playlistId ?? null);
+    selectChannel(firstChannel);
   }
 
   function saveAccessProfile() {
@@ -223,12 +248,136 @@ export function IPTVClient() {
   }
 
   function switchTab(nextTab: CatalogTab) {
-    const firstChannel = channels.find((channel) => channel.catalog === nextTab) || null;
-
     setActiveTab(nextTab);
     setActiveGroup("all");
     setQuery("");
-    selectChannel(firstChannel);
+    selectChannel(channels.find((channel) => channel.catalog === nextTab) || null);
+  }
+
+  function toggleFavorite(channel: IPTVChannel) {
+    const channelId = getChannelStorageId(channel);
+
+    setFavoriteIds((current) =>
+      current.includes(channelId) ? current.filter((item) => item !== channelId) : [channelId, ...current]
+    );
+  }
+
+  function clearPlaylistForm() {
+    setPlaylistName("");
+    setPlaylistUrl("");
+    setPlaylistInput("");
+    setEditingPlaylistId(null);
+  }
+
+  function fillPlaylistForm(playlist: SavedPlaylist) {
+    setPlaylistName(playlist.name);
+    setPlaylistUrl(playlist.url);
+    setPlaylistInput(playlist.content);
+    setEditingPlaylistId(playlist.id);
+  }
+
+  function validateAndParsePlaylist(rawContent: string) {
+    const parsedChannels = parseM3U(rawContent);
+
+    if (parsedChannels.length === 0) {
+      throw new Error("A playlist nao possui entradas validas EXTINF com URL.");
+    }
+
+    return parsedChannels;
+  }
+
+  async function fetchRemotePlaylist(url: string) {
+    const response = await fetch(`/api/playlist?url=${encodeURIComponent(url)}`);
+    const data = (await response.json()) as { content?: string; error?: string };
+
+    if (!response.ok || !data.content) {
+      throw new Error(data.error || "Nao foi possivel carregar a playlist.");
+    }
+
+    return data.content;
+  }
+
+  async function savePlaylist() {
+    const trimmedName = playlistName.trim();
+    const trimmedUrl = playlistUrl.trim();
+    const rawContent = playlistInput.trim();
+
+    if (!trimmedName) {
+      setError("Informe um nome para a playlist.");
+      return;
+    }
+
+    if (!trimmedUrl && !rawContent) {
+      setError("Informe uma URL M3U ou cole o conteudo da playlist.");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const content = trimmedUrl ? await fetchRemotePlaylist(trimmedUrl) : rawContent;
+      const parsedChannels = validateAndParsePlaylist(content);
+      const playlistRecord: SavedPlaylist = {
+        id: editingPlaylistId || createPlaylistId(),
+        name: trimmedName,
+        url: trimmedUrl,
+        content,
+        source: trimmedUrl ? "url" : "text",
+        updatedAt: new Date().toISOString()
+      };
+
+      setSavedPlaylists((current) => {
+        if (editingPlaylistId) {
+          return current.map((playlist) => (playlist.id === editingPlaylistId ? playlistRecord : playlist));
+        }
+
+        return [playlistRecord, ...current];
+      });
+
+      setPlaylistInput(content);
+      setActivePlaylistId(playlistRecord.id);
+      applyLoadedChannels(parsedChannels, `Playlist ${trimmedName} carregada.`, playlistRecord.id);
+      setStatus(editingPlaylistId ? `Playlist ${trimmedName} atualizada.` : `Playlist ${trimmedName} salva.`);
+      clearPlaylistForm();
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Falha ao salvar a playlist.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function loadSavedPlaylist(playlist: SavedPlaylist) {
+    try {
+      const parsedChannels = validateAndParsePlaylist(playlist.content);
+      setPlaylistInput(playlist.content);
+      setPlaylistUrl(playlist.url);
+      setPlaylistName(playlist.name);
+      setEditingPlaylistId(null);
+      applyLoadedChannels(parsedChannels, `Playlist ${playlist.name} carregada.`, playlist.id);
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Falha ao abrir a playlist.");
+    }
+  }
+
+  function deletePlaylist(playlistId: string) {
+    const playlistToRemove = savedPlaylists.find((playlist) => playlist.id === playlistId);
+
+    setSavedPlaylists((current) => current.filter((playlist) => playlist.id !== playlistId));
+
+    if (activePlaylistId === playlistId) {
+      setActivePlaylistId(null);
+      setChannels([]);
+      setSelectedId(null);
+      setStatus("Playlist removida. Cadastre ou carregue outra playlist.");
+    }
+
+    if (editingPlaylistId === playlistId) {
+      clearPlaylistForm();
+    }
+
+    setError(null);
+    setStatus(playlistToRemove ? `Playlist ${playlistToRemove.name} apagada.` : "Playlist apagada.");
   }
 
   function downloadPlaylist(filename: string, playlistChannels: IPTVChannel[]) {
@@ -268,88 +417,53 @@ export function IPTVClient() {
     }
   }
 
-  async function loadRemotePlaylist() {
-    const trimmedUrl = playlistUrl.trim();
-
-    if (!trimmedUrl) {
-      setError("Informe a URL da playlist M3U.");
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const response = await fetch(`/api/playlist?url=${encodeURIComponent(trimmedUrl)}`);
-      const data = (await response.json()) as { content?: string; error?: string };
-
-      if (!response.ok || !data.content) {
-        throw new Error(data.error || "Nao foi possivel carregar a playlist.");
-      }
-
-      const parsedChannels = parseM3U(data.content);
-
-      if (parsedChannels.length === 0) {
-        throw new Error("A playlist foi carregada, mas nenhum item valido foi encontrado.");
-      }
-
-      setPlaylistInput(data.content);
-      applyLoadedChannels(parsedChannels, trimmedUrl, `${parsedChannels.length} itens carregados da URL remota.`);
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Falha ao carregar a playlist.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function loadLocalPlaylist() {
-    const parsedChannels = parseM3U(playlistInput);
-
-    if (parsedChannels.length === 0) {
-      setError("Cole uma playlist M3U valida com entradas EXTINF e URL de stream.");
-      return;
-    }
-
-    applyLoadedChannels(parsedChannels, PASTED_SOURCE, `${parsedChannels.length} itens carregados do conteudo colado.`);
-  }
-
   return (
     <main className="iptv-shell">
-      <section className="iptv-hero">
-        <div>
+      <section className="iptv-home card">
+        <div className="home-backdrop" />
+        <div className="home-brand">
           <p className="eyebrow">Eztrogun IPTV</p>
-          <h1>Monte um catalogo com canais, filmes e series em areas separadas.</h1>
+          <h1>Assist+</h1>
           <p className="hero-copy">
-            Organize playlists M3U em uma interface com credenciais de acesso, abas dedicadas e
-            selecao rapida para canais ao vivo, filmes e series.
+            Um painel inicial neon para organizar acessos, playlists e catalogos separados em
+            canais, filmes e series.
           </p>
         </div>
 
-        <div className="hero-metrics">
-          <article>
-            <strong>{catalogCounts.live}</strong>
-            <span>Canais ao vivo</span>
-          </article>
-          <article>
-            <strong>{catalogCounts.movie}</strong>
-            <span>Filmes</span>
-          </article>
-          <article>
-            <strong>{catalogCounts.series}</strong>
-            <span>Series</span>
-          </article>
-          <article>
-            <strong>{favoriteChannels.length}</strong>
-            <span>Favoritos</span>
-          </article>
+        <div className="launch-grid">
+          <button type="button" className={`launch-card ${activeTab === "live" ? "active" : ""}`} onClick={() => switchTab("live")}>
+            <strong>Live TV</strong>
+            <span>{catalogCounts.live} itens</span>
+          </button>
+          <button type="button" className={`launch-card ${activeTab === "movie" ? "active" : ""}`} onClick={() => switchTab("movie")}>
+            <strong>Movies</strong>
+            <span>{catalogCounts.movie} itens</span>
+          </button>
+          <button type="button" className={`launch-card ${activeTab === "series" ? "active" : ""}`} onClick={() => switchTab("series")}>
+            <strong>Series</strong>
+            <span>{catalogCounts.series} itens</span>
+          </button>
+          <button type="button" className="launch-card" onClick={() => document.getElementById("playlists-panel")?.scrollIntoView({ behavior: "smooth" })}>
+            <strong>Playlists</strong>
+            <span>{savedPlaylists.length} salvas</span>
+          </button>
+          <button type="button" className="launch-card" onClick={() => document.getElementById("settings-panel")?.scrollIntoView({ behavior: "smooth" })}>
+            <strong>Settings</strong>
+            <span>Acesso local</span>
+          </button>
+        </div>
+
+        <div className="home-reload">
+          <span>Status</span>
+          <strong>{status}</strong>
         </div>
       </section>
 
       <section className="iptv-layout">
         <aside className="iptv-sidebar card">
-          <div className="panel-heading">
-            <h2>Acesso do cliente</h2>
-            <p>{status}</p>
+          <div id="settings-panel" className="panel-heading">
+            <h2>Settings</h2>
+            <p>Codigo, usuario e senha ficam salvos localmente neste navegador.</p>
           </div>
 
           <div className="credential-card">
@@ -388,51 +502,92 @@ export function IPTVClient() {
             </button>
           </div>
 
-          <label className="field">
-            <span>URL M3U</span>
-            <div className="inline-field">
+          <div id="playlists-panel" className="panel-heading">
+            <h2>Playlists</h2>
+            <p>Crie, edite, carregue e apague playlists sem depender de demos.</p>
+          </div>
+
+          <div className="playlist-editor">
+            <label className="field">
+              <span>Nome da playlist</span>
+              <input
+                type="text"
+                placeholder="Minha playlist principal"
+                value={playlistName}
+                onChange={(event) => setPlaylistName(event.target.value)}
+              />
+            </label>
+
+            <label className="field">
+              <span>URL M3U</span>
               <input
                 type="url"
                 placeholder="https://provedor.com/lista.m3u"
                 value={playlistUrl}
                 onChange={(event) => setPlaylistUrl(event.target.value)}
               />
-              <button type="button" onClick={loadRemotePlaylist} disabled={loading}>
-                {loading ? "Carregando" : "Importar"}
+            </label>
+
+            <label className="field">
+              <span>Conteudo M3U</span>
+              <textarea
+                rows={8}
+                placeholder="#EXTM3U ..."
+                value={playlistInput}
+                onChange={(event) => setPlaylistInput(event.target.value)}
+              />
+            </label>
+
+            <div className="sidebar-actions">
+              <button type="button" onClick={savePlaylist} disabled={loading}>
+                {loading ? "Salvando" : editingPlaylistId ? "Atualizar playlist" : "Salvar playlist"}
+              </button>
+              <button type="button" className="ghost-button" onClick={clearPlaylistForm}>
+                Limpar
               </button>
             </div>
-          </label>
-
-          <label className="field">
-            <span>Conteudo M3U</span>
-            <textarea
-              rows={10}
-              placeholder="#EXTM3U ..."
-              value={playlistInput}
-              onChange={(event) => setPlaylistInput(event.target.value)}
-            />
-          </label>
-
-          <div className="sidebar-actions">
-            <button type="button" onClick={loadLocalPlaylist}>
-              Ler texto colado
-            </button>
-            <button type="button" className="ghost-button" onClick={resetToDemo}>
-              Carregar demo
-            </button>
           </div>
 
           {error ? <p className="error">{error}</p> : null}
 
           <div className="source-card">
-            <span>Origem ativa</span>
-            <strong>
-              {activeSource === SAMPLE_SOURCE
-                ? "Demo local"
-                : activeSource === PASTED_SOURCE
-                  ? "Playlist colada manualmente"
-                  : activeSource}
-            </strong>
+            <span>Playlist ativa</span>
+            <strong>{activePlaylist?.name || "Nenhuma playlist carregada"}</strong>
+          </div>
+
+          <div className="saved-playlists">
+            {savedPlaylists.length ? (
+              savedPlaylists.map((playlist) => (
+                <article
+                  key={playlist.id}
+                  className={`saved-playlist ${playlist.id === activePlaylistId ? "active" : ""}`}
+                >
+                  <div>
+                    <strong>{playlist.name}</strong>
+                    <span>
+                      {playlist.source === "url" ? "URL remota" : "Conteudo colado"} •{" "}
+                      {new Date(playlist.updatedAt).toLocaleDateString("pt-BR")}
+                    </span>
+                  </div>
+                  <div className="saved-actions">
+                    <button type="button" className="mini-action" onClick={() => loadSavedPlaylist(playlist)}>
+                      Abrir
+                    </button>
+                    <button type="button" className="mini-action ghost-button" onClick={() => fillPlaylistForm(playlist)}>
+                      Editar
+                    </button>
+                    <button type="button" className="mini-action danger-button" onClick={() => deletePlaylist(playlist.id)}>
+                      Apagar
+                    </button>
+                  </div>
+                </article>
+              ))
+            ) : (
+              <div className="empty-state">
+                <strong>Nenhuma playlist salva.</strong>
+                <span>Crie sua primeira playlist no formulário acima.</span>
+              </div>
+            )}
           </div>
 
           <div className="sidebar-stack">
@@ -441,7 +596,6 @@ export function IPTVClient() {
                 <h3>Favoritos</h3>
                 <span>{favoriteChannels.length}</span>
               </div>
-
               {favoriteChannels.length ? (
                 <div className="mini-channel-list">
                   {favoriteChannels.slice(0, 6).map((channel) => (
@@ -461,7 +615,6 @@ export function IPTVClient() {
                 <h3>Recentes</h3>
                 <span>{recentChannels.length}</span>
               </div>
-
               {recentChannels.length ? (
                 <div className="mini-channel-list">
                   {recentChannels.slice(0, 6).map((channel) => (
@@ -504,7 +657,7 @@ export function IPTVClient() {
             <div className="channels-header">
               <div>
                 <h2>Ferramentas da categoria</h2>
-                <p>Trabalhe separadamente com a area atual do catalogo.</p>
+                <p>Exporte a aba atual ou copie o stream do item selecionado.</p>
               </div>
             </div>
 
@@ -543,10 +696,10 @@ export function IPTVClient() {
                 <h2>{getCatalogLabel(activeTab)}</h2>
                 <p>
                   {activeTab === "live"
-                    ? "Aqui aparecem apenas canais ao vivo."
+                    ? "Aqui ficam apenas canais ao vivo."
                     : activeTab === "movie"
-                      ? "Aqui aparecem apenas filmes."
-                      : "Aqui aparecem apenas itens de series."}
+                      ? "Aqui ficam apenas filmes."
+                      : "Aqui ficam apenas series."}
                 </p>
               </div>
               <div className="channels-controls">
@@ -610,7 +763,7 @@ export function IPTVClient() {
               {filteredChannels.length === 0 ? (
                 <div className="empty-state">
                   <strong>Nenhum item encontrado.</strong>
-                  <span>Ajuste o filtro, troque de aba ou carregue outra playlist.</span>
+                  <span>Carregue uma playlist e use as abas para navegar entre canais, filmes e series.</span>
                 </div>
               ) : null}
             </div>

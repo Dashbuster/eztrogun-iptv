@@ -1,16 +1,18 @@
 :root {
-  --bg: #07111f;
-  --bg-accent: #0d1c31;
-  --surface: rgba(9, 20, 38, 0.84);
-  --surface-strong: #10223b;
-  --surface-soft: rgba(255, 255, 255, 0.05);
-  --ink: #f4f7fb;
-  --muted: #94a8c4;
-  --line: rgba(181, 206, 240, 0.14);
-  --accent: #2dd4bf;
-  --accent-strong: #0ea5a4;
-  --danger: #ff8a8a;
-  --shadow: 0 24px 90px rgba(0, 0, 0, 0.35);
+  --bg: #180028;
+  --bg-deep: #0e0018;
+  --panel: rgba(72, 20, 111, 0.62);
+  --panel-strong: rgba(56, 14, 89, 0.84);
+  --panel-soft: rgba(255, 255, 255, 0.06);
+  --ink: #fff4ff;
+  --muted: #e0c1ef;
+  --line: rgba(255, 255, 255, 0.14);
+  --accent: #ffb61d;
+  --accent-strong: #ff8b1f;
+  --accent-pink: #ff3ec9;
+  --accent-cyan: #38d6ff;
+  --danger: #ff8aa0;
+  --shadow: 0 22px 70px rgba(0, 0, 0, 0.38);
 }
 
 * {
@@ -26,9 +28,10 @@ body {
   min-height: 100vh;
   color: var(--ink);
   background:
-    radial-gradient(circle at top left, rgba(45, 212, 191, 0.14), transparent 28%),
-    radial-gradient(circle at top right, rgba(59, 130, 246, 0.18), transparent 32%),
-    linear-gradient(180deg, #030712 0%, var(--bg) 100%);
+    radial-gradient(circle at 15% 20%, rgba(255, 62, 201, 0.24), transparent 24%),
+    radial-gradient(circle at 80% 10%, rgba(56, 214, 255, 0.18), transparent 22%),
+    radial-gradient(circle at 50% 70%, rgba(255, 182, 29, 0.08), transparent 28%),
+    linear-gradient(180deg, #25003d 0%, var(--bg) 45%, var(--bg-deep) 100%);
   font-family: var(--font-body), sans-serif;
 }
 
@@ -50,46 +53,66 @@ button {
 .iptv-shell {
   width: min(1440px, calc(100% - 32px));
   margin: 0 auto;
-  padding: 28px 0 40px;
+  padding: 24px 0 40px;
 }
 
 .card,
-.iptv-hero {
+.iptv-home {
   border: 1px solid var(--line);
-  background: var(--surface);
-  backdrop-filter: blur(20px);
+  background: var(--panel);
+  backdrop-filter: blur(22px);
   box-shadow: var(--shadow);
 }
 
-.iptv-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1.7fr) minmax(320px, 0.9fr);
-  gap: 24px;
-  padding: 28px;
-  border-radius: 30px;
+.iptv-home {
+  position: relative;
+  overflow: hidden;
+  padding: 34px 28px 28px;
+  border-radius: 34px;
+}
+
+.home-backdrop {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 20% 80%, rgba(255, 62, 201, 0.22), transparent 22%),
+    radial-gradient(circle at 45% 22%, rgba(255, 255, 255, 0.09), transparent 18%),
+    radial-gradient(circle at 75% 70%, rgba(56, 214, 255, 0.14), transparent 24%);
+  pointer-events: none;
+}
+
+.home-brand,
+.launch-grid,
+.home-reload {
+  position: relative;
+  z-index: 1;
 }
 
 .eyebrow {
   margin: 0 0 10px;
-  color: var(--accent);
+  color: #ffd36f;
   text-transform: uppercase;
-  letter-spacing: 0.14em;
-  font-size: 0.76rem;
+  letter-spacing: 0.16em;
+  font-size: 0.78rem;
   font-weight: 700;
 }
 
-.iptv-hero h1,
+.iptv-home h1,
 .player-copy h2,
 .channels-header h2,
 .panel-heading h2 {
   margin: 0;
   font-family: var(--font-display), sans-serif;
-  line-height: 0.95;
+  line-height: 0.92;
 }
 
-.iptv-hero h1 {
-  max-width: 12ch;
-  font-size: clamp(3rem, 7vw, 5.6rem);
+.iptv-home h1 {
+  font-size: clamp(4rem, 10vw, 6.8rem);
+  color: var(--accent);
+  text-shadow:
+    0 0 0 #3d0d5a,
+    0 0 12px rgba(255, 182, 29, 0.4),
+    0 6px 0 rgba(67, 14, 102, 0.9);
 }
 
 .hero-copy,
@@ -98,36 +121,71 @@ button {
 .player-copy p,
 .player-footer span,
 .source-card span,
-.field span {
+.field span,
+.saved-playlist span,
+.home-reload span {
   color: var(--muted);
   line-height: 1.6;
 }
 
-.hero-metrics {
+.launch-grid {
   display: grid;
-  gap: 14px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 28px;
 }
 
-.hero-metrics article {
-  padding: 18px 20px;
+.launch-card {
+  min-height: 118px;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 8px;
+  padding: 18px 14px;
   border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--ink);
+  text-align: center;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
-.hero-metrics strong {
-  display: block;
-  font-family: var(--font-display), sans-serif;
-  font-size: clamp(1.8rem, 5vw, 3.4rem);
+.launch-card strong {
+  font-size: 1.05rem;
 }
 
-.hero-metrics span {
+.launch-card span {
   color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.launch-card.active {
+  border-color: rgba(255, 255, 255, 0.44);
+  background: linear-gradient(180deg, rgba(86, 31, 132, 0.95), rgba(53, 13, 89, 0.88));
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 255, 255, 0.14),
+    0 16px 36px rgba(0, 0, 0, 0.28);
+}
+
+.home-reload {
+  width: min(240px, 100%);
+  margin: 22px auto 0;
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  padding: 14px 18px;
+  border-radius: 18px;
+  background: rgba(33, 7, 54, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.home-reload strong {
+  text-align: center;
 }
 
 .iptv-layout {
   display: grid;
-  grid-template-columns: 380px minmax(0, 1fr);
+  grid-template-columns: 400px minmax(0, 1fr);
   gap: 20px;
   margin-top: 20px;
   align-items: start;
@@ -139,7 +197,7 @@ button {
 .insights-card,
 .catalog-card,
 .details-card {
-  border-radius: 28px;
+  border-radius: 30px;
 }
 
 .iptv-sidebar {
@@ -155,12 +213,6 @@ button {
   gap: 8px;
 }
 
-.inline-field {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-}
-
 .field input,
 .field textarea,
 .channels-header input,
@@ -169,7 +221,7 @@ button {
   border: 1px solid var(--line);
   border-radius: 18px;
   padding: 14px 16px;
-  background: var(--surface-soft);
+  background: rgba(12, 0, 27, 0.38);
   color: var(--ink);
   outline: none;
 }
@@ -178,18 +230,23 @@ button {
 .field textarea:focus,
 .channels-header input:focus,
 .channels-header select:focus {
-  border-color: rgba(45, 212, 191, 0.5);
-  box-shadow: 0 0 0 4px rgba(45, 212, 191, 0.1);
+  border-color: rgba(255, 182, 29, 0.55);
+  box-shadow: 0 0 0 4px rgba(255, 182, 29, 0.12);
 }
 
 .field textarea {
   resize: vertical;
-  min-height: 260px;
+  min-height: 180px;
 }
 
 .iptv-sidebar button,
 .channel-item,
-.player-footer a {
+.player-footer a,
+.launch-card,
+.tool-button,
+.catalog-tabs button,
+.mini-channel,
+.saved-playlist {
   transition:
     transform 160ms ease,
     border-color 160ms ease,
@@ -197,12 +254,13 @@ button {
     box-shadow 160ms ease;
 }
 
-.iptv-sidebar button {
+.iptv-sidebar button,
+.tool-button {
   border: 0;
   border-radius: 999px;
   padding: 14px 18px;
   background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
-  color: #03211f;
+  color: #39100a;
   font-weight: 700;
 }
 
@@ -211,8 +269,13 @@ button {
 }
 
 .ghost-button {
-  background: rgba(255, 255, 255, 0.09) !important;
+  background: rgba(255, 255, 255, 0.1) !important;
   color: var(--ink) !important;
+}
+
+.danger-button {
+  background: rgba(255, 138, 160, 0.16) !important;
+  color: #ffd9df !important;
 }
 
 .sidebar-actions {
@@ -221,38 +284,65 @@ button {
   gap: 10px;
 }
 
-.credential-card {
-  display: grid;
-  gap: 12px;
+.credential-card,
+.playlist-editor,
+.source-card,
+.mini-panel {
   padding: 16px;
   border-radius: 22px;
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .source-card {
   display: grid;
   gap: 8px;
-  padding: 16px;
-  border-radius: 22px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--line);
 }
 
 .source-card strong {
   overflow-wrap: anywhere;
 }
 
-.sidebar-stack {
+.saved-playlists,
+.sidebar-stack,
+.mini-channel-list {
   display: grid;
-  gap: 14px;
+  gap: 12px;
 }
 
-.mini-panel {
+.saved-playlist {
+  display: grid;
+  gap: 14px;
   padding: 16px;
   border-radius: 22px;
-  background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.saved-playlist.active {
+  border-color: rgba(255, 182, 29, 0.4);
+  background: linear-gradient(180deg, rgba(255, 182, 29, 0.12), rgba(255, 255, 255, 0.04));
+}
+
+.saved-playlist strong,
+.mini-channel strong,
+.tool-button strong,
+.detail-grid strong,
+.channel-item strong,
+.empty-state strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.saved-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mini-action {
+  padding: 10px 14px !important;
+  font-size: 0.9rem;
 }
 
 .mini-panel-header {
@@ -270,13 +360,13 @@ button {
 
 .mini-panel-header span,
 .mini-panel-empty,
-.mini-channel span {
+.mini-channel span,
+.tool-button span,
+.detail-grid span,
+.channel-item span,
+.channel-item small,
+.empty-state span {
   color: var(--muted);
-}
-
-.mini-channel-list {
-  display: grid;
-  gap: 8px;
 }
 
 .mini-channel {
@@ -287,11 +377,6 @@ button {
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.03);
   color: var(--ink);
-}
-
-.mini-channel strong {
-  display: block;
-  margin-bottom: 4px;
 }
 
 .iptv-main {
@@ -331,13 +416,9 @@ button {
   font-weight: 700;
 }
 
-.catalog-tabs button span {
-  color: var(--muted);
-}
-
 .catalog-tabs button.active {
-  border-color: rgba(45, 212, 191, 0.45);
-  background: linear-gradient(135deg, rgba(45, 212, 191, 0.15), rgba(59, 130, 246, 0.12));
+  border-color: rgba(255, 255, 255, 0.34);
+  background: linear-gradient(180deg, rgba(86, 31, 132, 0.95), rgba(53, 13, 89, 0.88));
 }
 
 .tool-grid {
@@ -347,37 +428,11 @@ button {
 }
 
 .tool-button {
-  text-align: left;
-  padding: 18px;
   border-radius: 22px;
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.04);
+  text-align: left;
+  background: rgba(255, 255, 255, 0.06);
   color: var(--ink);
-}
-
-.tool-button strong,
-.group-summary strong {
-  display: block;
-  margin-bottom: 6px;
-}
-
-.tool-button span,
-.group-summary span {
-  color: var(--muted);
-}
-
-.group-summary {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 16px;
-}
-
-.group-summary article {
-  padding: 16px;
-  border-radius: 20px;
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.03);
 }
 
 .detail-grid {
@@ -392,15 +447,10 @@ button {
   padding: 16px;
   border-radius: 20px;
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.detail-grid span {
-  color: var(--muted);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .detail-grid strong {
-  display: block;
   overflow-wrap: anywhere;
 }
 
@@ -410,8 +460,8 @@ button {
   border-radius: 24px;
   border: 1px solid var(--line);
   background:
-    linear-gradient(135deg, rgba(45, 212, 191, 0.12), rgba(59, 130, 246, 0.08)),
-    #020617;
+    radial-gradient(circle at center, rgba(255, 62, 201, 0.18), transparent 34%),
+    linear-gradient(135deg, rgba(86, 31, 132, 0.85), rgba(19, 2, 35, 0.92));
   aspect-ratio: 16 / 9;
 }
 
@@ -434,7 +484,7 @@ button {
   padding: 12px 16px;
   border-radius: 999px;
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .channels-header {
@@ -469,7 +519,7 @@ button {
   padding: 16px 18px;
   border-radius: 20px;
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.04);
   color: var(--ink);
 }
 
@@ -484,32 +534,22 @@ button {
   flex-shrink: 0;
 }
 
-.channel-item strong,
-.empty-state strong {
-  display: block;
-  margin-bottom: 4px;
-}
-
-.channel-item span,
-.channel-item small,
-.empty-state span {
-  color: var(--muted);
-}
-
 .channel-item.active,
 .channel-item:hover,
 .player-footer a:hover,
 .iptv-sidebar button:hover,
 .tool-button:hover,
 .mini-channel:hover,
-.catalog-tabs button:hover {
+.catalog-tabs button:hover,
+.launch-card:hover,
+.saved-playlist:hover {
   transform: translateY(-1px);
-  border-color: rgba(45, 212, 191, 0.4);
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+  border-color: rgba(255, 182, 29, 0.42);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
 }
 
 .channel-item.active {
-  background: linear-gradient(135deg, rgba(45, 212, 191, 0.15), rgba(59, 130, 246, 0.1));
+  background: linear-gradient(135deg, rgba(255, 62, 201, 0.18), rgba(56, 214, 255, 0.12));
 }
 
 .favorite-chip {
@@ -526,9 +566,9 @@ button {
 }
 
 .favorite-chip.active {
-  color: #f7c948;
-  border-color: rgba(247, 201, 72, 0.4);
-  background: rgba(247, 201, 72, 0.12);
+  color: var(--accent);
+  border-color: rgba(255, 182, 29, 0.44);
+  background: rgba(255, 182, 29, 0.14);
 }
 
 .empty-state {
@@ -544,9 +584,16 @@ button {
   font-weight: 700;
 }
 
+@media (max-width: 1180px) {
+  .launch-grid,
+  .detail-grid,
+  .tool-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 1080px) {
-  .iptv-layout,
-  .iptv-hero {
+  .iptv-layout {
     grid-template-columns: 1fr;
   }
 
@@ -561,7 +608,7 @@ button {
     padding-top: 18px;
   }
 
-  .iptv-hero,
+  .iptv-home,
   .iptv-sidebar,
   .player-card,
   .channels-card,
@@ -572,25 +619,26 @@ button {
     padding: 18px;
   }
 
-  .iptv-hero h1 {
-    font-size: clamp(2.4rem, 14vw, 4rem);
+  .iptv-home h1 {
+    font-size: clamp(3.1rem, 18vw, 4.9rem);
   }
 
-  .inline-field,
-  .channels-header,
-  .player-footer {
-    grid-template-columns: 1fr;
-    display: grid;
-  }
-
+  .launch-grid,
+  .catalog-tabs,
+  .tool-grid,
+  .detail-grid,
   .channels-controls {
     grid-template-columns: 1fr;
   }
 
-  .tool-grid,
-  .group-summary,
-  .catalog-tabs,
-  .detail-grid {
+  .channels-header,
+  .player-footer {
+    display: grid;
     grid-template-columns: 1fr;
+  }
+
+  .saved-actions,
+  .sidebar-actions {
+    flex-direction: column;
   }
 }
