@@ -339,14 +339,7 @@ export function IPTVClient() {
   const mediaGridTopSpacerHeight = mediaGridStartRow * MEDIA_GRID_CARD_HEIGHT;
   const mediaGridBottomSpacerHeight = Math.max(0, mediaGridTotalHeight - mediaGridEndRow * MEDIA_GRID_CARD_HEIGHT);
 
-  const selectedChannel =
-    filteredChannels.find((channel) => channel.id === selectedId) ||
-    tabChannels.find((channel) => channel.id === selectedId) ||
-    (selectedId ? catalogIndex.byId.get(selectedId) || null : null) ||
-    filteredChannels[0] ||
-    tabChannels[0] ||
-    catalogIndex.all[0] ||
-    null;
+  const selectedChannel = selectedId ? catalogIndex.byId.get(selectedId) || null : null;
 
   const activePlaylist = useMemo(() => {
     return savedPlaylists.find((playlist) => playlist.id === activePlaylistId) || null;
@@ -415,8 +408,6 @@ export function IPTVClient() {
 
   function applyLoadedChannels(nextChannels: IPTVChannel[], nextStatus: string, playlistId?: string | null) {
     const preferredTab = chooseInitialTab(nextChannels);
-    const firstChannel =
-      nextChannels.find((channel) => channel.catalog === preferredTab) || nextChannels[0] || null;
     const preferredGroup = getPreferredGroup(nextChannels, preferredTab);
 
     setChannels(nextChannels);
@@ -427,7 +418,7 @@ export function IPTVClient() {
     setStatus(nextStatus);
     setError(null);
     setActivePlaylistId(playlistId ?? null);
-    selectChannel(firstChannel);
+    setSelectedId(null);
   }
 
   function saveAccessProfile() {
@@ -445,7 +436,7 @@ export function IPTVClient() {
     setActiveGroup(getPreferredGroup(nextTabChannels, nextTab));
     setQuery("");
     setListScrollTop(0);
-    selectChannel(nextTabChannels[0] || null);
+    setSelectedId(null);
   }
 
   function toggleFavorite(channel: IPTVChannel) {
@@ -723,38 +714,49 @@ export function IPTVClient() {
         <div className="home-brand">
           <p className="eyebrow">Eztrogun IPTV</p>
           <h1>Assist+</h1>
-          <p className="hero-copy">
-            Um painel inicial neon para organizar acessos, playlists e catalogos separados em
-            canais, filmes e series.
-          </p>
         </div>
 
         <div className="launch-grid">
           <button type="button" className={`launch-card ${activeTab === "live" ? "active" : ""}`} onClick={() => switchTab("live")}>
+            <span className="launch-icon">TV</span>
             <strong>Live TV</strong>
             <span>{catalogCounts.live} itens</span>
           </button>
           <button type="button" className={`launch-card ${activeTab === "movie" ? "active" : ""}`} onClick={() => switchTab("movie")}>
+            <span className="launch-icon">MV</span>
             <strong>Movies</strong>
             <span>{catalogCounts.movie} itens</span>
           </button>
           <button type="button" className={`launch-card ${activeTab === "series" ? "active" : ""}`} onClick={() => switchTab("series")}>
+            <span className="launch-icon">SR</span>
             <strong>Series</strong>
             <span>{catalogCounts.series} itens</span>
           </button>
           <button type="button" className="launch-card" onClick={() => document.getElementById("playlists-panel")?.scrollIntoView({ behavior: "smooth" })}>
+            <span className="launch-icon">PL</span>
             <strong>Playlists</strong>
             <span>{savedPlaylists.length} salvas</span>
           </button>
           <button type="button" className="launch-card" onClick={() => document.getElementById("settings-panel")?.scrollIntoView({ behavior: "smooth" })}>
+            <span className="launch-icon">ST</span>
             <strong>Settings</strong>
             <span>Acesso local</span>
           </button>
         </div>
 
-        <div className="home-reload">
-          <span>Status</span>
-          <strong>{status}</strong>
+        <button
+          type="button"
+          className="home-reload"
+          disabled={!activePlaylist}
+          onClick={() => activePlaylist && loadSavedPlaylist(activePlaylist)}
+        >
+          <span>Reload</span>
+          <strong>{activePlaylist ? activePlaylist.name : "Nenhuma playlist ativa"}</strong>
+        </button>
+
+        <div className="home-meta">
+          <span>{status}</span>
+          <span>{activePlaylist?.name || "Sem playlist ativa"}</span>
         </div>
       </section>
 
@@ -959,9 +961,11 @@ export function IPTVClient() {
             </div>
           </div>
 
-          <div className="card player-card">
-            <IPTVPlayer channel={selectedChannel} />
-          </div>
+          {selectedChannel ? (
+            <div className="card player-card">
+              <IPTVPlayer channel={selectedChannel} />
+            </div>
+          ) : null}
 
           <div className="card insights-card">
             <div className="channels-header">
@@ -1158,7 +1162,7 @@ export function IPTVClient() {
               <div className="preview-column">
                 <div className="browser-titlebar">
                   <strong>Preview</strong>
-                  <span>{selectedChannel ? getItemLabel(selectedChannel) : "Nenhum"}</span>
+                  <span>{selectedChannel ? getItemLabel(selectedChannel) : "Aguardando"}</span>
                 </div>
 
                 <div className="preview-summary">
@@ -1180,7 +1184,7 @@ export function IPTVClient() {
                   </article>
                 </div>
 
-                <div className={`preview-poster ${selectedChannel?.logo ? "has-image" : ""}`}>
+                <div className={`preview-poster ${selectedChannel?.logo ? "has-image" : ""} ${selectedChannel ? "" : "is-empty"}`}>
                   {selectedChannel?.logo ? (
                     <img src={selectedChannel.logo} alt={selectedChannel.name} loading="lazy" />
                   ) : null}

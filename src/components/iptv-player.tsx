@@ -11,7 +11,7 @@ type IPTVPlayerProps = {
 
 export function IPTVPlayer({ channel }: IPTVPlayerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const [playerMessage, setPlayerMessage] = useState("Selecione um canal para iniciar.");
+  const [playerMessage, setPlayerMessage] = useState("Selecione um item e pressione play para iniciar.");
 
   useEffect(() => {
     const video = videoRef.current;
@@ -25,7 +25,8 @@ export function IPTVPlayer({ channel }: IPTVPlayerProps) {
     const streamUrl = channel.url;
     const isHlsStream = streamUrl.includes(".m3u8") || channel.type === "hls";
 
-    setPlayerMessage(`Reproduzindo ${channel.name}.`);
+    video.pause();
+    setPlayerMessage(`Pronto para reproduzir ${channel.name}. Pressione play no player.`);
 
     if (isHlsStream && Hls.isSupported()) {
       hls = new Hls();
@@ -42,9 +43,6 @@ export function IPTVPlayer({ channel }: IPTVPlayerProps) {
     };
 
     video.addEventListener("error", handleError);
-    video.play().catch(() => {
-      setPlayerMessage("Pronto para reproduzir. Se o autoplay falhar, clique no botao play.");
-    });
 
     return () => {
       video.pause();
