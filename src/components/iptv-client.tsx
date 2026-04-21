@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
-import { buildM3U, parseM3U } from "@/lib/iptv";
+import { buildM3U } from "@/lib/iptv";
 import type { IPTVChannel } from "@/lib/iptv";
 
 import { IPTVPlayer } from "./iptv-player";
@@ -26,6 +26,9 @@ const FAVORITES_STORAGE_KEY = "iptv:favorites";
 const RECENT_STORAGE_KEY = "iptv:recent";
 const ACCESS_STORAGE_KEY = "iptv:access-profile";
 const PLAYLISTS_STORAGE_KEY = "iptv:saved-playlists";
+const CHANNEL_ROW_HEIGHT = 86;
+const CHANNEL_LIST_HEIGHT = 540;
+const CHANNEL_LIST_OVERSCAN = 8;
 
 function getChannelStorageId(channel: IPTVChannel) {
   return `${channel.name}::${channel.url}`;
@@ -98,6 +101,7 @@ function getItemLabel(channel: IPTVChannel | null) {
 }
 
 export function IPTVClient() {
+  const parserWorkerRef = useRef<Worker | null>(null);
   const [favoriteIds, setFavoriteIds] = useState<string[]>(() => readStorage(FAVORITES_STORAGE_KEY, []));
   const [recentIds, setRecentIds] = useState<string[]>(() => readStorage(RECENT_STORAGE_KEY, []));
   const [accessProfile, setAccessProfile] = useState<AccessProfile>(() =>
@@ -122,6 +126,7 @@ export function IPTVClient() {
   const [query, setQuery] = useState("");
   const [activeGroup, setActiveGroup] = useState("all");
   const [activeTab, setActiveTab] = useState<CatalogTab>("live");
+  const [listScrollTop, setListScrollTop] = useState(0);
 
   useEffect(() => {
     writeStorage(FAVORITES_STORAGE_KEY, favoriteIds);
@@ -143,12 +148,27 @@ export function IPTVClient() {
     writeStorage(PLAYLISTS_STORAGE_KEY, compactPlaylists);
   }, [savedPlaylists]);
 
-  const catalogCounts = useMemo(() => {
-    return {
-      live: channels.filter((channel) => channel.catalog === "live").length,
-      movie: channels.filter((channel) => channel.catalog === "movie").length,
-      series: channels.filter((channel) => channel.catalog === "series").length
+  useEffect(() => {
+    return () => {
+      parserWorkerRef.current?.terminate();
+      parserWorkerRef.current = null;
     };
+  }, []);
+
+  const deferredQuery = useDeferredValue(query);
+
+  const catalogCounts = useMemo(() => {
+    const counts = {
+      live: 0,
+      movie: 0,
+      series: 0
+    };
+
+    for (const channel of channels) {
+      counts[channel.catalog] += 1;
+    }
+
+    return counts;
   }, [channels]);
 
   const tabChannels = useMemo(() => {
@@ -160,7 +180,7 @@ export function IPTVClient() {
   }, [tabChannels]);
 
   const filteredChannels = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
+    const normalizedQuery = deferredQuery.trim().toLowerCase();
 
     return tabChannels.filter((channel) => {
       const matchesGroup = activeGroup === "all" || channel.group === activeGroup;
@@ -169,7 +189,16 @@ export function IPTVClient() {
 
       return matchesGroup && matchesQuery;
     });
-  }, [activeGroup, query, tabChannels]);
+  }, [activeGroup, deferredQuery, tabChannels]);
+
+  const totalVirtualHeight = filteredChannels.length * CHANNEL_ROW_HEIGHT;
+  const virtualStartIndex = Math.max(0, Math.floor(listScrollTop / CHANNEL_ROW_HEIGHT) - CHANNEL_LIST_OVERSCAN);
+  const virtualVisibleCount =
+    Math.ceil(CHANNEL_LIST_HEIGHT / CHANNEL_ROW_HEIGHT) + CHANNEL_LIST_OVERSCAN * 2;
+  const virtualEndIndex = Math.min(filteredChannels.length, virtualStartIndex + virtualVisibleCount);
+  const visibleChannels = filteredChannels.slice(virtualStartIndex, virtualEndIndex);
+  const topSpacerHeight = virtualStartIndex * CHANNEL_ROW_HEIGHT;
+  const bottomSpacerHeight = Math.max(0, totalVirtualHeight - virtualEndIndex * CHANNEL_ROW_HEIGHT);
 
   const selectedChannel =
     filteredChannels.find((channel) => channel.id === selectedId) ||
@@ -225,6 +254,7 @@ export function IPTVClient() {
     setActiveTab(preferredTab);
     setActiveGroup("all");
     setQuery("");
+    setListScrollTop(0);
     setStatus(nextStatus);
     setError(null);
     setActivePlaylistId(playlistId ?? null);
@@ -269,14 +299,46 @@ export function IPTVClient() {
     setEditingPlaylistId(playlist.id);
   }
 
-  function validateAndParsePlaylist(rawContent: string) {
-    const parsedChannels = parseM3U(rawContent);
-
-    if (parsedChannels.length === 0) {
-      throw new Error("A playlist nao possui entradas validas EXTINF com URL.");
+  async function validateAndParsePlaylist(rawContent: string) {
+    if (!parserWorkerRef.current) {
+      parserWorkerRef.current = new Worker(new URL("../workers/iptv-parser.worker.ts", import.meta.url));
     }
 
-    return parsedChannels;
+    return await new Promise<IPTVChannel[]>((resolve, reject) => {
+      const worker = parserWorkerRef.current;
+
+      if (!worker) {
+        reject(new Error("Falha ao iniciar o parser da playlist."));
+        return;
+      }
+
+      const handleMessage = (
+        event: MessageEvent<
+          | { ok: true; channels: IPTVChannel[] }
+          | {
+              ok: false;
+              error: string;
+            }
+        >
+      ) => {
+        worker.removeEventListener("message", handleMessage);
+
+        if (!event.data.ok) {
+          reject(new Error(event.data.error));
+          return;
+        }
+
+        if (event.data.channels.length === 0) {
+          reject(new Error("A playlist nao possui entradas validas EXTINF com URL."));
+          return;
+        }
+
+        resolve(event.data.channels);
+      };
+
+      worker.addEventListener("message", handleMessage);
+      worker.postMessage({ content: rawContent });
+    });
   }
 
   async function fetchRemotePlaylist(url: string) {
@@ -310,7 +372,7 @@ export function IPTVClient() {
 
     try {
       const content = trimmedUrl ? await fetchRemotePlaylist(trimmedUrl) : rawContent;
-      const parsedChannels = validateAndParsePlaylist(content);
+      const parsedChannels = await validateAndParsePlaylist(content);
       const playlistRecord: SavedPlaylist = {
         id: editingPlaylistId || createPlaylistId(),
         name: trimmedName,
@@ -355,9 +417,12 @@ export function IPTVClient() {
 
   function loadSavedPlaylist(playlist: SavedPlaylist) {
     const openPlaylist = async () => {
+      setLoading(true);
+      setError(null);
+
       try {
         const content = playlist.source === "url" ? await fetchRemotePlaylist(playlist.url) : playlist.content || "";
-        const parsedChannels = validateAndParsePlaylist(content);
+        const parsedChannels = await validateAndParsePlaylist(content);
 
         setPlaylistInput(content);
         setPlaylistUrl(playlist.url);
@@ -366,6 +431,8 @@ export function IPTVClient() {
         applyLoadedChannels(parsedChannels, `Playlist ${playlist.name} carregada.`, playlist.id);
       } catch (caughtError) {
         setError(caughtError instanceof Error ? caughtError.message : "Falha ao abrir a playlist.");
+      } finally {
+        setLoading(false);
       }
     };
 
@@ -731,8 +798,9 @@ export function IPTVClient() {
               </div>
             </div>
 
-            <div className="channel-list">
-              {filteredChannels.map((channel) => (
+            <div className="channel-list" onScroll={(event) => setListScrollTop(event.currentTarget.scrollTop)}>
+              <div style={{ height: topSpacerHeight }} aria-hidden="true" />
+              {visibleChannels.map((channel) => (
                 <button
                   key={channel.id}
                   type="button"
@@ -771,6 +839,7 @@ export function IPTVClient() {
                   </div>
                 </button>
               ))}
+              <div style={{ height: bottomSpacerHeight }} aria-hidden="true" />
 
               {filteredChannels.length === 0 ? (
                 <div className="empty-state">

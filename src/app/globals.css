@@ -511,6 +511,7 @@ button {
 
 .channel-item {
   width: 100%;
+  min-height: 76px;
   text-align: left;
   display: flex;
   justify-content: space-between;
