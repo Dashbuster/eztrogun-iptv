@@ -571,6 +571,41 @@ button {
   background: rgba(255, 255, 255, 0.04);
 }
 
+.preview-poster {
+  overflow: hidden;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  margin-bottom: 12px;
+  aspect-ratio: 16 / 9;
+}
+
+.preview-poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.epg-panel {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.epg-now {
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: linear-gradient(135deg, rgba(255, 62, 201, 0.18), rgba(56, 214, 255, 0.12));
+}
+
+.epg-now small {
+  color: var(--muted);
+}
+
 .timeline-item {
   display: flex;
   align-items: center;
@@ -618,7 +653,32 @@ button {
 }
 
 .channel-copy {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   min-width: 0;
+}
+
+.channel-copy strong,
+.channel-copy span {
+  display: block;
+}
+
+.media-thumb {
+  width: 56px;
+  height: 74px;
+  overflow: hidden;
+  flex-shrink: 0;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.media-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .channel-meta {

@@ -108,6 +108,14 @@ function getPreferredGroup(channels: IPTVChannel[], tab: CatalogTab) {
   return channels.find((channel) => channel.catalog === tab)?.group || "all";
 }
 
+function getChannelNumber(channel: IPTVChannel | null) {
+  if (!channel) {
+    return "--";
+  }
+
+  return channel.id.split("-")[0] || "--";
+}
+
 export function IPTVClient() {
   const parserWorkerRef = useRef<Worker | null>(null);
   const [favoriteIds, setFavoriteIds] = useState<string[]>(() => readStorage(FAVORITES_STORAGE_KEY, []));
@@ -278,6 +286,17 @@ export function IPTVClient() {
       .map((id) => catalogIndex.byStorageId.get(id))
       .filter((channel): channel is IndexedChannel => Boolean(channel));
   }, [catalogIndex, recentIds]);
+
+  const nextUpChannels = useMemo(() => {
+    if (activeTab !== "live") {
+      return [];
+    }
+
+    const selectedIndex = filteredChannels.findIndex((channel) => channel.id === selectedChannel?.id);
+    const startIndex = selectedIndex >= 0 ? selectedIndex + 1 : 0;
+
+    return filteredChannels.slice(startIndex, startIndex + 4);
+  }, [activeTab, filteredChannels, selectedChannel]);
 
   function rememberRecentChannel(channel: IPTVChannel | null) {
     if (!channel) {
@@ -894,11 +913,16 @@ export function IPTVClient() {
                       onClick={() => selectChannel(channel)}
                     >
                       <div className="channel-copy">
+                        {activeTab !== "live" && channel.logo ? (
+                          <span className="media-thumb">
+                            <img src={channel.logo} alt={channel.name} loading="lazy" />
+                          </span>
+                        ) : null}
                         <strong>{channel.name}</strong>
                         <span>{channel.group || "Sem categoria"}</span>
                       </div>
                       <div className="channel-meta">
-                        <small>{channel.id.split("-")[0]}</small>
+                        <small>{getChannelNumber(channel)}</small>
                         <span
                           role="button"
                           aria-label={`${
@@ -955,7 +979,51 @@ export function IPTVClient() {
                     <span>Formato</span>
                     <strong>{selectedChannel?.type.toUpperCase() || "--"}</strong>
                   </article>
+                  <article>
+                    <span>Canal</span>
+                    <strong>{getChannelNumber(selectedChannel)}</strong>
+                  </article>
                 </div>
+
+                {selectedChannel?.logo ? (
+                  <div className="preview-poster">
+                    <img src={selectedChannel.logo} alt={selectedChannel.name} loading="lazy" />
+                  </div>
+                ) : null}
+
+                {activeTab === "live" ? (
+                  <div className="epg-panel">
+                    <div className="browser-titlebar">
+                      <strong>Agora / Proximo</strong>
+                      <span>{getChannelNumber(selectedChannel)}</span>
+                    </div>
+
+                    <div className="epg-now">
+                      <span>Agora</span>
+                      <strong>{selectedChannel?.name || "Nenhum canal"}</strong>
+                      <small>{selectedChannel?.group || "Sem categoria"}</small>
+                    </div>
+
+                    <div className="timeline-list">
+                      {nextUpChannels.map((channel) => (
+                        <button key={channel.id} type="button" className="timeline-item" onClick={() => selectChannel(channel)}>
+                          <span className="timeline-dot" />
+                          <div>
+                            <strong>{channel.name}</strong>
+                            <small>{channel.group}</small>
+                          </div>
+                        </button>
+                      ))}
+
+                      {nextUpChannels.length === 0 ? (
+                        <div className="empty-state">
+                          <strong>Nenhum proximo item.</strong>
+                          <span>Troque a categoria ou escolha outro canal.</span>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
 
                 <div className="timeline-list">
                   {recentChannels
