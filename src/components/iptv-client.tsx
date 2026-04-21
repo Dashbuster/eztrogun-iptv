@@ -21,6 +21,10 @@ type SavedPlaylist = {
   source: "url" | "text";
   updatedAt: string;
 };
+type IndexedChannel = IPTVChannel & {
+  searchValue: string;
+  storageId: string;
+};
 
 const FAVORITES_STORAGE_KEY = "iptv:favorites";
 const RECENT_STORAGE_KEY = "iptv:recent";
@@ -157,35 +161,75 @@ export function IPTVClient() {
 
   const deferredQuery = useDeferredValue(query);
 
-  const catalogCounts = useMemo(() => {
-    const counts = {
-      live: 0,
-      movie: 0,
-      series: 0
+  const catalogIndex = useMemo(() => {
+    const all: IndexedChannel[] = [];
+    const byId = new Map<string, IndexedChannel>();
+    const byStorageId = new Map<string, IndexedChannel>();
+    const byCatalog: Record<CatalogTab, IndexedChannel[]> = {
+      live: [],
+      movie: [],
+      series: []
+    };
+    const groupsByCatalog: Record<CatalogTab, string[]> = {
+      live: [],
+      movie: [],
+      series: []
+    };
+    const groupSets: Record<CatalogTab, Set<string>> = {
+      live: new Set<string>(),
+      movie: new Set<string>(),
+      series: new Set<string>()
     };
 
     for (const channel of channels) {
-      counts[channel.catalog] += 1;
+      const indexedChannel: IndexedChannel = {
+        ...channel,
+        searchValue: `${channel.name} ${channel.group || ""}`.toLowerCase(),
+        storageId: getChannelStorageId(channel)
+      };
+
+      all.push(indexedChannel);
+      byId.set(indexedChannel.id, indexedChannel);
+      byStorageId.set(indexedChannel.storageId, indexedChannel);
+      byCatalog[indexedChannel.catalog].push(indexedChannel);
+
+      if (indexedChannel.group && !groupSets[indexedChannel.catalog].has(indexedChannel.group)) {
+        groupSets[indexedChannel.catalog].add(indexedChannel.group);
+        groupsByCatalog[indexedChannel.catalog].push(indexedChannel.group);
+      }
     }
 
-    return counts;
+    return {
+      all,
+      byId,
+      byStorageId,
+      byCatalog,
+      groupsByCatalog
+    };
   }, [channels]);
 
+  const catalogCounts = useMemo(() => {
+    return {
+      live: catalogIndex.byCatalog.live.length,
+      movie: catalogIndex.byCatalog.movie.length,
+      series: catalogIndex.byCatalog.series.length
+    };
+  }, [catalogIndex]);
+
   const tabChannels = useMemo(() => {
-    return channels.filter((channel) => channel.catalog === activeTab);
-  }, [activeTab, channels]);
+    return catalogIndex.byCatalog[activeTab];
+  }, [activeTab, catalogIndex]);
 
   const groups = useMemo(() => {
-    return ["all", ...new Set(tabChannels.map((channel) => channel.group).filter(Boolean))];
-  }, [tabChannels]);
+    return ["all", ...catalogIndex.groupsByCatalog[activeTab]];
+  }, [activeTab, catalogIndex]);
 
   const filteredChannels = useMemo(() => {
     const normalizedQuery = deferredQuery.trim().toLowerCase();
 
     return tabChannels.filter((channel) => {
       const matchesGroup = activeGroup === "all" || channel.group === activeGroup;
-      const matchesQuery =
-        !normalizedQuery || `${channel.name} ${channel.group || ""}`.toLowerCase().includes(normalizedQuery);
+      const matchesQuery = !normalizedQuery || channel.searchValue.includes(normalizedQuery);
 
       return matchesGroup && matchesQuery;
     });
@@ -203,10 +247,10 @@ export function IPTVClient() {
   const selectedChannel =
     filteredChannels.find((channel) => channel.id === selectedId) ||
     tabChannels.find((channel) => channel.id === selectedId) ||
-    channels.find((channel) => channel.id === selectedId) ||
+    (selectedId ? catalogIndex.byId.get(selectedId) || null : null) ||
     filteredChannels[0] ||
     tabChannels[0] ||
-    channels[0] ||
+    catalogIndex.all[0] ||
     null;
 
   const activePlaylist = useMemo(() => {
@@ -214,14 +258,16 @@ export function IPTVClient() {
   }, [activePlaylistId, savedPlaylists]);
 
   const favoriteChannels = useMemo(() => {
-    const favorites = new Set(favoriteIds);
-    return channels.filter((channel) => favorites.has(getChannelStorageId(channel)));
-  }, [channels, favoriteIds]);
+    return favoriteIds
+      .map((id) => catalogIndex.byStorageId.get(id))
+      .filter((channel): channel is IndexedChannel => Boolean(channel));
+  }, [catalogIndex, favoriteIds]);
 
   const recentChannels = useMemo(() => {
-    const channelsById = new Map(channels.map((channel) => [getChannelStorageId(channel), channel]));
-    return recentIds.map((id) => channelsById.get(id)).filter((channel): channel is IPTVChannel => Boolean(channel));
-  }, [channels, recentIds]);
+    return recentIds
+      .map((id) => catalogIndex.byStorageId.get(id))
+      .filter((channel): channel is IndexedChannel => Boolean(channel));
+  }, [catalogIndex, recentIds]);
 
   function rememberRecentChannel(channel: IPTVChannel | null) {
     if (!channel) {
@@ -274,7 +320,8 @@ export function IPTVClient() {
     setActiveTab(nextTab);
     setActiveGroup("all");
     setQuery("");
-    selectChannel(channels.find((channel) => channel.catalog === nextTab) || null);
+    setListScrollTop(0);
+    selectChannel(catalogIndex.byCatalog[nextTab][0] || null);
   }
 
   function toggleFavorite(channel: IPTVChannel) {
@@ -782,7 +829,13 @@ export function IPTVClient() {
                 </p>
               </div>
               <div className="channels-controls">
-                <select value={activeGroup} onChange={(event) => setActiveGroup(event.target.value)}>
+                <select
+                  value={activeGroup}
+                  onChange={(event) => {
+                    setActiveGroup(event.target.value);
+                    setListScrollTop(0);
+                  }}
+                >
                   {groups.map((group) => (
                     <option key={group} value={group}>
                       {group === "all" ? "Todos os grupos" : group}
@@ -793,7 +846,10 @@ export function IPTVClient() {
                   type="search"
                   placeholder={`Buscar em ${getCatalogLabel(activeTab).toLowerCase()}`}
                   value={query}
-                  onChange={(event) => setQuery(event.target.value)}
+                  onChange={(event) => {
+                    setQuery(event.target.value);
+                    setListScrollTop(0);
+                  }}
                 />
               </div>
             </div>
