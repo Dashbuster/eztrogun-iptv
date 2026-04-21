@@ -17,7 +17,7 @@ type SavedPlaylist = {
   id: string;
   name: string;
   url: string;
-  content: string;
+  content?: string;
   source: "url" | "text";
   updatedAt: string;
 };
@@ -33,6 +33,32 @@ function getChannelStorageId(channel: IPTVChannel) {
 
 function createPlaylistId() {
   return `playlist-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function readStorage<T>(key: string, fallback: T) {
+  if (typeof window === "undefined") {
+    return fallback;
+  }
+
+  try {
+    const storedValue = window.localStorage.getItem(key);
+    return storedValue ? (JSON.parse(storedValue) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStorage(key: string, value: unknown) {
+  if (typeof window === "undefined") {
+    return { ok: true as const };
+  }
+
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+    return { ok: true as const };
+  } catch (error) {
+    return { ok: false as const, error };
+  }
 }
 
 function getEmptyAccessProfile(): AccessProfile {
@@ -72,54 +98,17 @@ function getItemLabel(channel: IPTVChannel | null) {
 }
 
 export function IPTVClient() {
-  const [favoriteIds, setFavoriteIds] = useState<string[]>(() => {
-    if (typeof window === "undefined") {
-      return [];
-    }
-
-    try {
-      const storedFavorites = window.localStorage.getItem(FAVORITES_STORAGE_KEY);
-      return storedFavorites ? (JSON.parse(storedFavorites) as string[]) : [];
-    } catch {
-      return [];
-    }
-  });
-  const [recentIds, setRecentIds] = useState<string[]>(() => {
-    if (typeof window === "undefined") {
-      return [];
-    }
-
-    try {
-      const storedRecent = window.localStorage.getItem(RECENT_STORAGE_KEY);
-      return storedRecent ? (JSON.parse(storedRecent) as string[]) : [];
-    } catch {
-      return [];
-    }
-  });
-  const [accessProfile, setAccessProfile] = useState<AccessProfile>(() => {
-    if (typeof window === "undefined") {
-      return getEmptyAccessProfile();
-    }
-
-    try {
-      const storedProfile = window.localStorage.getItem(ACCESS_STORAGE_KEY);
-      return storedProfile ? (JSON.parse(storedProfile) as AccessProfile) : getEmptyAccessProfile();
-    } catch {
-      return getEmptyAccessProfile();
-    }
-  });
-  const [savedPlaylists, setSavedPlaylists] = useState<SavedPlaylist[]>(() => {
-    if (typeof window === "undefined") {
-      return [];
-    }
-
-    try {
-      const storedPlaylists = window.localStorage.getItem(PLAYLISTS_STORAGE_KEY);
-      return storedPlaylists ? (JSON.parse(storedPlaylists) as SavedPlaylist[]) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [favoriteIds, setFavoriteIds] = useState<string[]>(() => readStorage(FAVORITES_STORAGE_KEY, []));
+  const [recentIds, setRecentIds] = useState<string[]>(() => readStorage(RECENT_STORAGE_KEY, []));
+  const [accessProfile, setAccessProfile] = useState<AccessProfile>(() =>
+    readStorage(ACCESS_STORAGE_KEY, getEmptyAccessProfile())
+  );
+  const [savedPlaylists, setSavedPlaylists] = useState<SavedPlaylist[]>(() =>
+    readStorage<SavedPlaylist[]>(PLAYLISTS_STORAGE_KEY, []).map((playlist) => ({
+      ...playlist,
+      content: playlist.source === "text" ? playlist.content || "" : ""
+    }))
+  );
   const [playlistName, setPlaylistName] = useState("");
   const [playlistInput, setPlaylistInput] = useState("");
   const [playlistUrl, setPlaylistUrl] = useState("");
@@ -135,19 +124,23 @@ export function IPTVClient() {
   const [activeTab, setActiveTab] = useState<CatalogTab>("live");
 
   useEffect(() => {
-    window.localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(favoriteIds));
+    writeStorage(FAVORITES_STORAGE_KEY, favoriteIds);
   }, [favoriteIds]);
 
   useEffect(() => {
-    window.localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify(recentIds));
+    writeStorage(RECENT_STORAGE_KEY, recentIds);
   }, [recentIds]);
 
   useEffect(() => {
-    window.localStorage.setItem(ACCESS_STORAGE_KEY, JSON.stringify(accessProfile));
+    writeStorage(ACCESS_STORAGE_KEY, accessProfile);
   }, [accessProfile]);
 
   useEffect(() => {
-    window.localStorage.setItem(PLAYLISTS_STORAGE_KEY, JSON.stringify(savedPlaylists));
+    const compactPlaylists = savedPlaylists.map((playlist) => ({
+      ...playlist,
+      content: playlist.source === "text" ? playlist.content || "" : ""
+    }));
+    writeStorage(PLAYLISTS_STORAGE_KEY, compactPlaylists);
   }, [savedPlaylists]);
 
   const catalogCounts = useMemo(() => {
@@ -272,7 +265,7 @@ export function IPTVClient() {
   function fillPlaylistForm(playlist: SavedPlaylist) {
     setPlaylistName(playlist.name);
     setPlaylistUrl(playlist.url);
-    setPlaylistInput(playlist.content);
+    setPlaylistInput(playlist.content || "");
     setEditingPlaylistId(playlist.id);
   }
 
@@ -322,10 +315,23 @@ export function IPTVClient() {
         id: editingPlaylistId || createPlaylistId(),
         name: trimmedName,
         url: trimmedUrl,
-        content,
+        content: trimmedUrl ? "" : content,
         source: trimmedUrl ? "url" : "text",
         updatedAt: new Date().toISOString()
       };
+      const compactNextPlaylists = (
+        editingPlaylistId
+          ? savedPlaylists.map((playlist) => (playlist.id === editingPlaylistId ? playlistRecord : playlist))
+          : [playlistRecord, ...savedPlaylists]
+      ).map((playlist) => ({
+        ...playlist,
+        content: playlist.source === "text" ? playlist.content || "" : ""
+      }));
+      const persistCheck = writeStorage(PLAYLISTS_STORAGE_KEY, compactNextPlaylists);
+
+      if (!persistCheck.ok) {
+        throw new Error("A playlist e grande demais para ficar salva no navegador. Use URL ou reduza o conteudo colado.");
+      }
 
       setSavedPlaylists((current) => {
         if (editingPlaylistId) {
@@ -348,16 +354,22 @@ export function IPTVClient() {
   }
 
   function loadSavedPlaylist(playlist: SavedPlaylist) {
-    try {
-      const parsedChannels = validateAndParsePlaylist(playlist.content);
-      setPlaylistInput(playlist.content);
-      setPlaylistUrl(playlist.url);
-      setPlaylistName(playlist.name);
-      setEditingPlaylistId(null);
-      applyLoadedChannels(parsedChannels, `Playlist ${playlist.name} carregada.`, playlist.id);
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Falha ao abrir a playlist.");
-    }
+    const openPlaylist = async () => {
+      try {
+        const content = playlist.source === "url" ? await fetchRemotePlaylist(playlist.url) : playlist.content || "";
+        const parsedChannels = validateAndParsePlaylist(content);
+
+        setPlaylistInput(content);
+        setPlaylistUrl(playlist.url);
+        setPlaylistName(playlist.name);
+        setEditingPlaylistId(null);
+        applyLoadedChannels(parsedChannels, `Playlist ${playlist.name} carregada.`, playlist.id);
+      } catch (caughtError) {
+        setError(caughtError instanceof Error ? caughtError.message : "Falha ao abrir a playlist.");
+      }
+    };
+
+    void openPlaylist();
   }
 
   function deletePlaylist(playlistId: string) {
