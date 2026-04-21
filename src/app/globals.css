@@ -497,8 +497,97 @@ button {
 
 .channels-controls {
   display: grid;
-  grid-template-columns: minmax(180px, 220px) minmax(240px, 320px);
+  grid-template-columns: minmax(240px, 320px);
   gap: 10px;
+}
+
+.browser-layout {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1.2fr) 320px;
+  gap: 14px;
+  align-items: start;
+}
+
+.browser-titlebar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 0 2px 12px;
+}
+
+.browser-titlebar span {
+  color: var(--muted);
+}
+
+.category-column,
+.items-column,
+.preview-column {
+  min-width: 0;
+}
+
+.category-list,
+.timeline-list {
+  display: grid;
+  gap: 10px;
+}
+
+.category-item,
+.timeline-item {
+  width: 100%;
+  text-align: left;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ink);
+}
+
+.category-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.category-item.active,
+.timeline-item.active {
+  border-color: rgba(255, 182, 29, 0.42);
+  background: linear-gradient(135deg, rgba(255, 62, 201, 0.18), rgba(56, 214, 255, 0.12));
+}
+
+.preview-summary {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.preview-summary article {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.timeline-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.timeline-item small {
+  color: var(--muted);
+}
+
+.timeline-dot {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-pink));
+  box-shadow: 0 0 10px rgba(56, 214, 255, 0.4);
 }
 
 .channel-list {
@@ -507,6 +596,10 @@ button {
   max-height: 540px;
   overflow: auto;
   padding-right: 4px;
+}
+
+.legacy-hidden {
+  display: none;
 }
 
 .channel-item {
@@ -591,6 +684,14 @@ button {
   .tool-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .browser-layout {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  .preview-column {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 1080px) {
@@ -628,7 +729,8 @@ button {
   .catalog-tabs,
   .tool-grid,
   .detail-grid,
-  .channels-controls {
+  .channels-controls,
+  .browser-layout {
     grid-template-columns: 1fr;
   }
 

@@ -104,6 +104,10 @@ function getItemLabel(channel: IPTVChannel | null) {
   return "Canal";
 }
 
+function getPreferredGroup(channels: IPTVChannel[], tab: CatalogTab) {
+  return channels.find((channel) => channel.catalog === tab)?.group || "all";
+}
+
 export function IPTVClient() {
   const parserWorkerRef = useRef<Worker | null>(null);
   const [favoriteIds, setFavoriteIds] = useState<string[]>(() => readStorage(FAVORITES_STORAGE_KEY, []));
@@ -220,9 +224,15 @@ export function IPTVClient() {
     return catalogIndex.byCatalog[activeTab];
   }, [activeTab, catalogIndex]);
 
-  const groups = useMemo(() => {
-    return ["all", ...catalogIndex.groupsByCatalog[activeTab]];
-  }, [activeTab, catalogIndex]);
+  const categoryEntries = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    for (const channel of tabChannels) {
+      counts.set(channel.group, (counts.get(channel.group) || 0) + 1);
+    }
+
+    return [...counts.entries()].map(([group, count]) => ({ group, count }));
+  }, [tabChannels]);
 
   const filteredChannels = useMemo(() => {
     const normalizedQuery = deferredQuery.trim().toLowerCase();
@@ -295,10 +305,11 @@ export function IPTVClient() {
     const preferredTab = chooseInitialTab(nextChannels);
     const firstChannel =
       nextChannels.find((channel) => channel.catalog === preferredTab) || nextChannels[0] || null;
+    const preferredGroup = getPreferredGroup(nextChannels, preferredTab);
 
     setChannels(nextChannels);
     setActiveTab(preferredTab);
-    setActiveGroup("all");
+    setActiveGroup(preferredGroup);
     setQuery("");
     setListScrollTop(0);
     setStatus(nextStatus);
@@ -317,11 +328,12 @@ export function IPTVClient() {
   }
 
   function switchTab(nextTab: CatalogTab) {
+    const nextTabChannels = catalogIndex.byCatalog[nextTab];
     setActiveTab(nextTab);
-    setActiveGroup("all");
+    setActiveGroup(getPreferredGroup(nextTabChannels, nextTab));
     setQuery("");
     setListScrollTop(0);
-    selectChannel(catalogIndex.byCatalog[nextTab][0] || null);
+    selectChannel(nextTabChannels[0] || null);
   }
 
   function toggleFavorite(channel: IPTVChannel) {
@@ -829,19 +841,6 @@ export function IPTVClient() {
                 </p>
               </div>
               <div className="channels-controls">
-                <select
-                  value={activeGroup}
-                  onChange={(event) => {
-                    setActiveGroup(event.target.value);
-                    setListScrollTop(0);
-                  }}
-                >
-                  {groups.map((group) => (
-                    <option key={group} value={group}>
-                      {group === "all" ? "Todos os grupos" : group}
-                    </option>
-                  ))}
-                </select>
                 <input
                   type="search"
                   placeholder={`Buscar em ${getCatalogLabel(activeTab).toLowerCase()}`}
@@ -854,7 +853,133 @@ export function IPTVClient() {
               </div>
             </div>
 
-            <div className="channel-list" onScroll={(event) => setListScrollTop(event.currentTarget.scrollTop)}>
+            <div className="browser-layout">
+              <div className="category-column">
+                <div className="browser-titlebar">
+                  <strong>Categorias</strong>
+                  <span>{categoryEntries.length}</span>
+                </div>
+
+                <div className="category-list">
+                  {categoryEntries.map((entry) => (
+                    <button
+                      key={entry.group}
+                      type="button"
+                      className={`category-item ${activeGroup === entry.group ? "active" : ""}`}
+                      onClick={() => {
+                        setActiveGroup(entry.group);
+                        setListScrollTop(0);
+                      }}
+                    >
+                      <strong>{entry.group}</strong>
+                      <span>{entry.count}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="items-column">
+                <div className="browser-titlebar">
+                  <strong>{activeGroup === "all" ? "Todos os grupos" : activeGroup}</strong>
+                  <span>{filteredChannels.length}</span>
+                </div>
+
+                <div className="channel-list" onScroll={(event) => setListScrollTop(event.currentTarget.scrollTop)}>
+                  <div style={{ height: topSpacerHeight }} aria-hidden="true" />
+                  {visibleChannels.map((channel) => (
+                    <button
+                      key={channel.id}
+                      type="button"
+                      className={`channel-item ${channel.id === selectedChannel?.id ? "active" : ""}`}
+                      onClick={() => selectChannel(channel)}
+                    >
+                      <div className="channel-copy">
+                        <strong>{channel.name}</strong>
+                        <span>{channel.group || "Sem categoria"}</span>
+                      </div>
+                      <div className="channel-meta">
+                        <small>{channel.id.split("-")[0]}</small>
+                        <span
+                          role="button"
+                          aria-label={`${
+                            favoriteIds.includes(getChannelStorageId(channel)) ? "Remover dos" : "Adicionar aos"
+                          } favoritos`}
+                          className={`favorite-chip ${
+                            favoriteIds.includes(getChannelStorageId(channel)) ? "active" : ""
+                          }`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            toggleFavorite(channel);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              toggleFavorite(channel);
+                            }
+                          }}
+                          tabIndex={0}
+                        >
+                          ★
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                  <div style={{ height: bottomSpacerHeight }} aria-hidden="true" />
+
+                  {filteredChannels.length === 0 ? (
+                    <div className="empty-state">
+                      <strong>Nenhum item encontrado.</strong>
+                      <span>Troque de categoria ou refine a busca.</span>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="preview-column">
+                <div className="browser-titlebar">
+                  <strong>Preview</strong>
+                  <span>{selectedChannel ? getItemLabel(selectedChannel) : "Nenhum"}</span>
+                </div>
+
+                <div className="preview-summary">
+                  <article>
+                    <span>Selecionado</span>
+                    <strong>{selectedChannel?.name || "Nenhum item"}</strong>
+                  </article>
+                  <article>
+                    <span>Categoria</span>
+                    <strong>{selectedChannel?.group || "Sem categoria"}</strong>
+                  </article>
+                  <article>
+                    <span>Formato</span>
+                    <strong>{selectedChannel?.type.toUpperCase() || "--"}</strong>
+                  </article>
+                </div>
+
+                <div className="timeline-list">
+                  {recentChannels
+                    .filter((channel) => channel.catalog === activeTab)
+                    .slice(0, 6)
+                    .map((channel) => (
+                      <button
+                        key={channel.id}
+                        type="button"
+                        className={`timeline-item ${channel.id === selectedChannel?.id ? "active" : ""}`}
+                        onClick={() => selectChannel(channel)}
+                      >
+                        <span className="timeline-dot" />
+                        <div>
+                          <strong>{channel.name}</strong>
+                          <small>{channel.group}</small>
+                        </div>
+                      </button>
+                    ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="channel-list legacy-hidden" onScroll={(event) => setListScrollTop(event.currentTarget.scrollTop)}>
               <div style={{ height: topSpacerHeight }} aria-hidden="true" />
               {visibleChannels.map((channel) => (
                 <button
