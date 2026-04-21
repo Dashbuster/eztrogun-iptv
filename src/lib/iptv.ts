@@ -5,6 +5,7 @@ export type IPTVChannel = {
   logo?: string;
   url: string;
   type: "hls" | "stream";
+  catalog: "live" | "movie" | "series";
 };
 
 function slugify(value: string) {
@@ -25,6 +26,37 @@ function parseAttributes(line: string) {
   }
 
   return attributes;
+}
+
+function inferCatalog(input: {
+  name: string;
+  group: string;
+  url: string;
+  attributes: Record<string, string>;
+}): IPTVChannel["catalog"] {
+  const haystack = `${input.name} ${input.group} ${input.url} ${Object.values(input.attributes).join(" ")}`.toLowerCase();
+
+  if (
+    haystack.includes("series") ||
+    haystack.includes("temporada") ||
+    haystack.includes("season") ||
+    haystack.includes("episodio") ||
+    haystack.includes("episode")
+  ) {
+    return "series";
+  }
+
+  if (
+    haystack.includes("filme") ||
+    haystack.includes("filmes") ||
+    haystack.includes("movie") ||
+    haystack.includes("vod") ||
+    haystack.includes("/movie/")
+  ) {
+    return "movie";
+  }
+
+  return "live";
 }
 
 export function parseM3U(content: string): IPTVChannel[] {
@@ -68,7 +100,8 @@ export function parseM3U(content: string): IPTVChannel[] {
       group,
       logo: attributes["tvg-logo"],
       url,
-      type: url.includes(".m3u8") ? "hls" : "stream"
+      type: url.includes(".m3u8") ? "hls" : "stream",
+      catalog: inferCatalog({ name: resolvedName, group, url, attributes })
     });
   }
 

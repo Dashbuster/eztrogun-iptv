@@ -63,7 +63,11 @@ export function IPTVPlayer({ channel }: IPTVPlayerProps) {
       <div className="player-copy">
         <p className="eyebrow">Agora tocando</p>
         <h2>{channel?.name || "Nenhum canal selecionado"}</h2>
-        <p>{channel?.group || "Selecione uma playlist e escolha um canal na lista."}</p>
+        <p>
+          {channel
+            ? `${channel.catalog === "live" ? "Canal ao vivo" : channel.catalog === "movie" ? "Filme" : "Serie"} • ${channel.group}`
+            : "Selecione uma playlist e escolha um item na lista."}
+        </p>
       </div>
 
       <div className="video-frame">
