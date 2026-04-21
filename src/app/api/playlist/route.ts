@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
   const url = request.nextUrl.searchParams.get("url");
+  const mode = request.nextUrl.searchParams.get("mode") || "m3u";
 
   if (!url) {
     return NextResponse.json({ error: "Informe a URL da playlist." }, { status: 400 });
@@ -25,7 +26,7 @@ export async function GET(request: NextRequest) {
     const contentType = response.headers.get("content-type") || "";
     const content = await response.text();
 
-    if (!content.includes("#EXTM3U") && !content.includes("#EXTINF")) {
+    if (mode !== "raw" && !content.includes("#EXTM3U") && !content.includes("#EXTINF")) {
       return NextResponse.json(
         { error: `Conteudo remoto invalido para M3U. Content-Type: ${contentType || "desconhecido"}.` },
         { status: 422 }

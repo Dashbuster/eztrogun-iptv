@@ -2,6 +2,14 @@
 
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
+import {
+  createEPGIndex,
+  formatProgramTimeRange,
+  getCurrentAndNextPrograms,
+  getProgramsForChannel,
+  parseXmltv
+} from "@/lib/epg";
+import type { EPGIndex } from "@/lib/epg";
 import { buildM3U } from "@/lib/iptv";
 import type { IPTVChannel } from "@/lib/iptv";
 
@@ -17,6 +25,7 @@ type SavedPlaylist = {
   id: string;
   name: string;
   url: string;
+  epgUrl?: string;
   content?: string;
   source: "url" | "text";
   updatedAt: string;
@@ -33,6 +42,8 @@ const PLAYLISTS_STORAGE_KEY = "iptv:saved-playlists";
 const CHANNEL_ROW_HEIGHT = 86;
 const CHANNEL_LIST_HEIGHT = 540;
 const CHANNEL_LIST_OVERSCAN = 8;
+const MEDIA_GRID_CARD_HEIGHT = 308;
+const MEDIA_GRID_OVERSCAN = 2;
 
 function getChannelStorageId(channel: IPTVChannel) {
   return `${channel.name}::${channel.url}`;
@@ -116,6 +127,26 @@ function getChannelNumber(channel: IPTVChannel | null) {
   return channel.id.split("-")[0] || "--";
 }
 
+function getCatalogDescription(channel: IPTVChannel | null, epgDescription?: string) {
+  if (!channel) {
+    return "Selecione um item para abrir detalhes completos.";
+  }
+
+  if (epgDescription) {
+    return epgDescription;
+  }
+
+  if (channel.catalog === "live") {
+    return `${channel.name} esta dentro da categoria ${channel.group || "Sem categoria"} e pronto para reproducao ao vivo.`;
+  }
+
+  if (channel.catalog === "movie") {
+    return `${channel.name} esta listado em ${channel.group || "Filmes"} e pode ser aberto no player principal.`;
+  }
+
+  return `${channel.name} esta organizado em ${channel.group || "Series"} para navegacao por categoria.`;
+}
+
 export function IPTVClient() {
   const parserWorkerRef = useRef<Worker | null>(null);
   const [favoriteIds, setFavoriteIds] = useState<string[]>(() => readStorage(FAVORITES_STORAGE_KEY, []));
@@ -132,17 +163,21 @@ export function IPTVClient() {
   const [playlistName, setPlaylistName] = useState("");
   const [playlistInput, setPlaylistInput] = useState("");
   const [playlistUrl, setPlaylistUrl] = useState("");
+  const [playlistEpgUrl, setPlaylistEpgUrl] = useState("");
   const [editingPlaylistId, setEditingPlaylistId] = useState<string | null>(null);
   const [channels, setChannels] = useState<IPTVChannel[]>([]);
+  const [epgIndex, setEpgIndex] = useState<EPGIndex | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activePlaylistId, setActivePlaylistId] = useState<string | null>(null);
   const [status, setStatus] = useState("Cadastre uma playlist para começar.");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [epgLoading, setEpgLoading] = useState(false);
   const [query, setQuery] = useState("");
   const [activeGroup, setActiveGroup] = useState("all");
   const [activeTab, setActiveTab] = useState<CatalogTab>("live");
   const [listScrollTop, setListScrollTop] = useState(0);
+  const [gridColumns, setGridColumns] = useState(4);
 
   useEffect(() => {
     writeStorage(FAVORITES_STORAGE_KEY, favoriteIds);
@@ -169,6 +204,36 @@ export function IPTVClient() {
       parserWorkerRef.current?.terminate();
       parserWorkerRef.current = null;
     };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const updateGridColumns = () => {
+      if (window.innerWidth < 640) {
+        setGridColumns(1);
+        return;
+      }
+
+      if (window.innerWidth < 980) {
+        setGridColumns(2);
+        return;
+      }
+
+      if (window.innerWidth < 1320) {
+        setGridColumns(3);
+        return;
+      }
+
+      setGridColumns(4);
+    };
+
+    updateGridColumns();
+    window.addEventListener("resize", updateGridColumns);
+
+    return () => window.removeEventListener("resize", updateGridColumns);
   }, []);
 
   const deferredQuery = useDeferredValue(query);
@@ -261,6 +326,18 @@ export function IPTVClient() {
   const visibleChannels = filteredChannels.slice(virtualStartIndex, virtualEndIndex);
   const topSpacerHeight = virtualStartIndex * CHANNEL_ROW_HEIGHT;
   const bottomSpacerHeight = Math.max(0, totalVirtualHeight - virtualEndIndex * CHANNEL_ROW_HEIGHT);
+  const mediaGridRowCount = Math.ceil(filteredChannels.length / gridColumns);
+  const mediaGridTotalHeight = mediaGridRowCount * MEDIA_GRID_CARD_HEIGHT;
+  const mediaGridStartRow = Math.max(0, Math.floor(listScrollTop / MEDIA_GRID_CARD_HEIGHT) - MEDIA_GRID_OVERSCAN);
+  const mediaGridVisibleRows =
+    Math.ceil(CHANNEL_LIST_HEIGHT / MEDIA_GRID_CARD_HEIGHT) + MEDIA_GRID_OVERSCAN * 2;
+  const mediaGridEndRow = Math.min(mediaGridRowCount, mediaGridStartRow + mediaGridVisibleRows);
+  const mediaGridVisibleChannels = filteredChannels.slice(
+    mediaGridStartRow * gridColumns,
+    mediaGridEndRow * gridColumns
+  );
+  const mediaGridTopSpacerHeight = mediaGridStartRow * MEDIA_GRID_CARD_HEIGHT;
+  const mediaGridBottomSpacerHeight = Math.max(0, mediaGridTotalHeight - mediaGridEndRow * MEDIA_GRID_CARD_HEIGHT);
 
   const selectedChannel =
     filteredChannels.find((channel) => channel.id === selectedId) ||
@@ -288,7 +365,7 @@ export function IPTVClient() {
   }, [catalogIndex, recentIds]);
 
   const nextUpChannels = useMemo(() => {
-    if (activeTab !== "live") {
+    if (activeTab !== "live" || epgIndex) {
       return [];
     }
 
@@ -296,7 +373,23 @@ export function IPTVClient() {
     const startIndex = selectedIndex >= 0 ? selectedIndex + 1 : 0;
 
     return filteredChannels.slice(startIndex, startIndex + 4);
-  }, [activeTab, filteredChannels, selectedChannel]);
+  }, [activeTab, epgIndex, filteredChannels, selectedChannel]);
+
+  const selectedPrograms = useMemo(() => {
+    if (!selectedChannel) {
+      return [];
+    }
+
+    return getProgramsForChannel(epgIndex, selectedChannel.tvgId, selectedChannel.name);
+  }, [epgIndex, selectedChannel]);
+
+  const { currentProgram, upcomingPrograms } = useMemo(() => {
+    return getCurrentAndNextPrograms(selectedPrograms);
+  }, [selectedPrograms]);
+
+  const selectedDescription = useMemo(() => {
+    return getCatalogDescription(selectedChannel, currentProgram?.description);
+  }, [currentProgram?.description, selectedChannel]);
 
   function rememberRecentChannel(channel: IPTVChannel | null) {
     if (!channel) {
@@ -366,6 +459,7 @@ export function IPTVClient() {
   function clearPlaylistForm() {
     setPlaylistName("");
     setPlaylistUrl("");
+    setPlaylistEpgUrl("");
     setPlaylistInput("");
     setEditingPlaylistId(null);
   }
@@ -373,6 +467,7 @@ export function IPTVClient() {
   function fillPlaylistForm(playlist: SavedPlaylist) {
     setPlaylistName(playlist.name);
     setPlaylistUrl(playlist.url);
+    setPlaylistEpgUrl(playlist.epgUrl || "");
     setPlaylistInput(playlist.content || "");
     setEditingPlaylistId(playlist.id);
   }
@@ -419,20 +514,43 @@ export function IPTVClient() {
     });
   }
 
-  async function fetchRemotePlaylist(url: string) {
-    const response = await fetch(`/api/playlist?url=${encodeURIComponent(url)}`);
+  async function fetchRemoteText(url: string, mode: "m3u" | "raw" = "m3u") {
+    const response = await fetch(`/api/playlist?url=${encodeURIComponent(url)}&mode=${mode}`);
     const data = (await response.json()) as { content?: string; error?: string };
 
     if (!response.ok || !data.content) {
-      throw new Error(data.error || "Nao foi possivel carregar a playlist.");
+      throw new Error(data.error || "Nao foi possivel carregar o conteudo remoto.");
     }
 
     return data.content;
   }
 
+  async function loadEPG(epgUrl: string) {
+    const trimmedUrl = epgUrl.trim();
+
+    if (!trimmedUrl) {
+      setEpgIndex(null);
+      return false;
+    }
+
+    setEpgLoading(true);
+
+    try {
+      const content = await fetchRemoteText(trimmedUrl, "raw");
+      setEpgIndex(createEPGIndex(parseXmltv(content)));
+      return true;
+    } catch (caughtError) {
+      setEpgIndex(null);
+      throw caughtError;
+    } finally {
+      setEpgLoading(false);
+    }
+  }
+
   async function savePlaylist() {
     const trimmedName = playlistName.trim();
     const trimmedUrl = playlistUrl.trim();
+    const trimmedEpgUrl = playlistEpgUrl.trim();
     const rawContent = playlistInput.trim();
 
     if (!trimmedName) {
@@ -449,12 +567,13 @@ export function IPTVClient() {
     setError(null);
 
     try {
-      const content = trimmedUrl ? await fetchRemotePlaylist(trimmedUrl) : rawContent;
+      const content = trimmedUrl ? await fetchRemoteText(trimmedUrl) : rawContent;
       const parsedChannels = await validateAndParsePlaylist(content);
       const playlistRecord: SavedPlaylist = {
         id: editingPlaylistId || createPlaylistId(),
         name: trimmedName,
         url: trimmedUrl,
+        epgUrl: trimmedEpgUrl,
         content: trimmedUrl ? "" : content,
         source: trimmedUrl ? "url" : "text",
         updatedAt: new Date().toISOString()
@@ -481,10 +600,25 @@ export function IPTVClient() {
         return [playlistRecord, ...current];
       });
 
-      setPlaylistInput(content);
+      if (trimmedEpgUrl) {
+        await loadEPG(trimmedEpgUrl);
+      } else {
+        setEpgIndex(null);
+      }
+
+      if (!trimmedUrl) {
+        setPlaylistInput(content);
+      }
+
       setActivePlaylistId(playlistRecord.id);
       applyLoadedChannels(parsedChannels, `Playlist ${trimmedName} carregada.`, playlistRecord.id);
-      setStatus(editingPlaylistId ? `Playlist ${trimmedName} atualizada.` : `Playlist ${trimmedName} salva.`);
+      setStatus(
+        trimmedUrl
+          ? `Playlist ${trimmedName} carregada por URL sem espelhar o M3U no editor.`
+          : editingPlaylistId
+            ? `Playlist ${trimmedName} atualizada.`
+            : `Playlist ${trimmedName} salva.`
+      );
       clearPlaylistForm();
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Falha ao salvar a playlist.");
@@ -499,11 +633,18 @@ export function IPTVClient() {
       setError(null);
 
       try {
-        const content = playlist.source === "url" ? await fetchRemotePlaylist(playlist.url) : playlist.content || "";
+        const content = playlist.source === "url" ? await fetchRemoteText(playlist.url) : playlist.content || "";
         const parsedChannels = await validateAndParsePlaylist(content);
 
-        setPlaylistInput(content);
+        if (playlist.epgUrl) {
+          await loadEPG(playlist.epgUrl);
+        } else {
+          setEpgIndex(null);
+        }
+
+        setPlaylistInput(playlist.source === "text" ? content : "");
         setPlaylistUrl(playlist.url);
+        setPlaylistEpgUrl(playlist.epgUrl || "");
         setPlaylistName(playlist.name);
         setEditingPlaylistId(null);
         applyLoadedChannels(parsedChannels, `Playlist ${playlist.name} carregada.`, playlist.id);
@@ -525,6 +666,7 @@ export function IPTVClient() {
     if (activePlaylistId === playlistId) {
       setActivePlaylistId(null);
       setChannels([]);
+      setEpgIndex(null);
       setSelectedId(null);
       setStatus("Playlist removida. Cadastre ou carregue outra playlist.");
     }
@@ -686,10 +828,20 @@ export function IPTVClient() {
             </label>
 
             <label className="field">
+              <span>URL EPG/XMLTV</span>
+              <input
+                type="url"
+                placeholder="https://provedor.com/guia.xml"
+                value={playlistEpgUrl}
+                onChange={(event) => setPlaylistEpgUrl(event.target.value)}
+              />
+            </label>
+
+            <label className="field">
               <span>Conteudo M3U</span>
               <textarea
                 rows={8}
-                placeholder="#EXTM3U ..."
+                placeholder={playlistUrl ? "Playlist remota carregada sem espelhar o M3U aqui." : "#EXTM3U ..."}
                 value={playlistInput}
                 onChange={(event) => setPlaylistInput(event.target.value)}
               />
@@ -710,6 +862,7 @@ export function IPTVClient() {
           <div className="source-card">
             <span>Playlist ativa</span>
             <strong>{activePlaylist?.name || "Nenhuma playlist carregada"}</strong>
+            <small>{epgLoading ? "Carregando EPG..." : activePlaylist?.epgUrl ? "EPG ativo" : "Sem EPG"}</small>
           </div>
 
           <div className="saved-playlists">
@@ -903,7 +1056,8 @@ export function IPTVClient() {
                   <span>{filteredChannels.length}</span>
                 </div>
 
-                <div className="channel-list" onScroll={(event) => setListScrollTop(event.currentTarget.scrollTop)}>
+                {activeTab === "live" ? (
+                  <div className="channel-list" onScroll={(event) => setListScrollTop(event.currentTarget.scrollTop)}>
                   <div style={{ height: topSpacerHeight }} aria-hidden="true" />
                   {visibleChannels.map((channel) => (
                     <button
@@ -913,13 +1067,15 @@ export function IPTVClient() {
                       onClick={() => selectChannel(channel)}
                     >
                       <div className="channel-copy">
-                        {activeTab !== "live" && channel.logo ? (
-                          <span className="media-thumb">
+                        {channel.logo ? (
+                          <span className={`media-thumb ${activeTab === "live" ? "live-thumb" : ""}`}>
                             <img src={channel.logo} alt={channel.name} loading="lazy" />
                           </span>
                         ) : null}
-                        <strong>{channel.name}</strong>
-                        <span>{channel.group || "Sem categoria"}</span>
+                        <div>
+                          <strong>{channel.name}</strong>
+                          <span>{channel.group || "Sem categoria"}</span>
+                        </div>
                       </div>
                       <div className="channel-meta">
                         <small>{getChannelNumber(channel)}</small>
@@ -957,7 +1113,46 @@ export function IPTVClient() {
                       <span>Troque de categoria ou refine a busca.</span>
                     </div>
                   ) : null}
-                </div>
+                  </div>
+                ) : (
+                  <div className="media-grid-shell" onScroll={(event) => setListScrollTop(event.currentTarget.scrollTop)}>
+                    <div style={{ height: mediaGridTopSpacerHeight }} aria-hidden="true" />
+                    <div
+                      className="media-grid"
+                      style={{ gridTemplateColumns: `repeat(${gridColumns}, minmax(0, 1fr))` }}
+                    >
+                      {mediaGridVisibleChannels.map((channel) => (
+                        <button
+                          key={channel.id}
+                          type="button"
+                          className={`media-card ${channel.id === selectedChannel?.id ? "active" : ""}`}
+                          onClick={() => selectChannel(channel)}
+                        >
+                          <div className="media-card-poster">
+                            {channel.logo ? (
+                              <img src={channel.logo} alt={channel.name} loading="lazy" />
+                            ) : (
+                              <span className="media-card-fallback">{getItemLabel(channel)}</span>
+                            )}
+                          </div>
+                          <div className="media-card-copy">
+                            <strong>{channel.name}</strong>
+                            <span>{channel.group || "Sem categoria"}</span>
+                            <small>{getChannelNumber(channel)}</small>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ height: mediaGridBottomSpacerHeight }} aria-hidden="true" />
+
+                    {filteredChannels.length === 0 ? (
+                      <div className="empty-state">
+                        <strong>Nenhum item encontrado.</strong>
+                        <span>Troque de categoria ou refine a busca.</span>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
               </div>
 
               <div className="preview-column">
@@ -985,11 +1180,16 @@ export function IPTVClient() {
                   </article>
                 </div>
 
-                {selectedChannel?.logo ? (
-                  <div className="preview-poster">
+                <div className={`preview-poster ${selectedChannel?.logo ? "has-image" : ""}`}>
+                  {selectedChannel?.logo ? (
                     <img src={selectedChannel.logo} alt={selectedChannel.name} loading="lazy" />
+                  ) : null}
+                  <div className="preview-overlay">
+                    <span>{getItemLabel(selectedChannel)}</span>
+                    <strong>{selectedChannel?.name || "Nenhum item"}</strong>
+                    <small>{selectedDescription}</small>
                   </div>
-                ) : null}
+                </div>
 
                 {activeTab === "live" ? (
                   <div className="epg-panel">
@@ -1000,25 +1200,44 @@ export function IPTVClient() {
 
                     <div className="epg-now">
                       <span>Agora</span>
-                      <strong>{selectedChannel?.name || "Nenhum canal"}</strong>
-                      <small>{selectedChannel?.group || "Sem categoria"}</small>
+                      <strong>{currentProgram?.title || selectedChannel?.name || "Nenhum canal"}</strong>
+                      <small>
+                        {currentProgram
+                          ? `${formatProgramTimeRange(currentProgram)} • ${currentProgram.description || "Programacao ao vivo"}`
+                          : selectedChannel?.group || "Sem categoria"}
+                      </small>
                     </div>
 
                     <div className="timeline-list">
-                      {nextUpChannels.map((channel) => (
-                        <button key={channel.id} type="button" className="timeline-item" onClick={() => selectChannel(channel)}>
-                          <span className="timeline-dot" />
-                          <div>
-                            <strong>{channel.name}</strong>
-                            <small>{channel.group}</small>
-                          </div>
-                        </button>
-                      ))}
+                      {upcomingPrograms.length
+                        ? upcomingPrograms.map((program) => (
+                            <article key={`${program.channelId}-${program.start}`} className="timeline-item program-item">
+                              <span className="timeline-dot" />
+                              <div>
+                                <strong>{program.title}</strong>
+                                <small>{formatProgramTimeRange(program)}</small>
+                              </div>
+                            </article>
+                          ))
+                        : nextUpChannels.map((channel) => (
+                            <button
+                              key={channel.id}
+                              type="button"
+                              className="timeline-item"
+                              onClick={() => selectChannel(channel)}
+                            >
+                              <span className="timeline-dot" />
+                              <div>
+                                <strong>{channel.name}</strong>
+                                <small>{channel.group}</small>
+                              </div>
+                            </button>
+                          ))}
 
-                      {nextUpChannels.length === 0 ? (
+                      {upcomingPrograms.length === 0 && nextUpChannels.length === 0 ? (
                         <div className="empty-state">
                           <strong>Nenhum proximo item.</strong>
-                          <span>Troque a categoria ou escolha outro canal.</span>
+                          <span>Adicione uma URL XMLTV para ver a grade real por horario.</span>
                         </div>
                       ) : null}
                     </div>
@@ -1116,6 +1335,14 @@ export function IPTVClient() {
               <article>
                 <span>Codigo ativo</span>
                 <strong>{accessProfile.code.trim() || "Nao definido"}</strong>
+              </article>
+              <article>
+                <span>Descricao</span>
+                <strong>{selectedDescription}</strong>
+              </article>
+              <article>
+                <span>Guia EPG</span>
+                <strong>{activePlaylist?.epgUrl ? "Conectado" : "Nao informado"}</strong>
               </article>
             </div>
           </div>

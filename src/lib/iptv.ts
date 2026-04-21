@@ -3,6 +3,7 @@ export type IPTVChannel = {
   name: string;
   group: string;
   logo?: string;
+  tvgId?: string;
   url: string;
   type: "hls" | "stream";
   catalog: "live" | "movie" | "series";
@@ -99,6 +100,7 @@ export function parseM3U(content: string): IPTVChannel[] {
       name: resolvedName,
       group,
       logo: attributes["tvg-logo"],
+      tvgId: attributes["tvg-id"] || attributes["channel-id"],
       url,
       type: url.includes(".m3u8") ? "hls" : "stream",
       catalog: inferCatalog({ name: resolvedName, group, url, attributes })
@@ -116,6 +118,10 @@ export function buildM3U(channels: IPTVChannel[]) {
       `tvg-name="${channel.name.replace(/"/g, "")}"`,
       `group-title="${channel.group.replace(/"/g, "")}"`
     ];
+
+    if (channel.tvgId) {
+      attributes.push(`tvg-id="${channel.tvgId.replace(/"/g, "")}"`);
+    }
 
     if (channel.logo) {
       attributes.push(`tvg-logo="${channel.logo.replace(/"/g, "")}"`);
