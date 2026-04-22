@@ -9,7 +9,7 @@ import {
   getProgramsForChannel,
   parseXmltv
 } from "@/lib/epg";
-import type { EPGIndex } from "@/lib/epg";
+import type { EPGIndex, EPGProgram } from "@/lib/epg";
 import { buildM3U } from "@/lib/iptv";
 import type { IPTVChannel } from "@/lib/iptv";
 
@@ -53,6 +53,19 @@ type CachedPlaylistPayload = {
   cachedAt: string;
   channels: IPTVChannel[];
 };
+type HomeRailItem = {
+  id: string;
+  title: string;
+  subtitle: string;
+  image: string;
+  aspect: "poster" | "wide";
+  target: CatalogTab;
+};
+type HomeRail = {
+  id: string;
+  title: string;
+  items: HomeRailItem[];
+};
 
 const FAVORITES_STORAGE_KEY = "iptv:favorites";
 const RECENT_STORAGE_KEY = "iptv:recent";
@@ -65,8 +78,148 @@ const CHANNEL_LIST_HEIGHT = 540;
 const CHANNEL_LIST_OVERSCAN = 8;
 const MEDIA_GRID_CARD_HEIGHT = 468;
 const MEDIA_GRID_OVERSCAN = 2;
+const HOME_HERO = {
+  eyebrow: "Assist+ Original",
+  title: "Noite de Estreia",
+  description:
+    "Uma home com clima de streaming premium, hero cinematografico e trilhas que priorizam TV/Desktop sem perder adaptacao para mouse e mobile.",
+  image:
+    "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=1600&q=80"
+} as const;
+const HOME_RAILS_MOCK: HomeRail[] = [
+  {
+    id: "recent-live",
+    title: "Canais Recentes",
+    items: [
+      {
+        id: "live-1",
+        title: "Arena Sports UHD",
+        subtitle: "Esportes ao vivo",
+        image: "https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?auto=format&fit=crop&w=1200&q=80",
+        aspect: "wide",
+        target: "live"
+      },
+      {
+        id: "live-2",
+        title: "Prime News",
+        subtitle: "Cobertura 24h",
+        image: "https://images.unsplash.com/photo-1495020689067-958852a7765e?auto=format&fit=crop&w=1200&q=80",
+        aspect: "wide",
+        target: "live"
+      },
+      {
+        id: "live-3",
+        title: "Cinema Action",
+        subtitle: "Abertura especial",
+        image: "https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?auto=format&fit=crop&w=1200&q=80",
+        aspect: "wide",
+        target: "live"
+      }
+    ]
+  },
+  {
+    id: "fresh-drop",
+    title: "Adicionados Recentemente",
+    items: [
+      {
+        id: "drop-1",
+        title: "Horizonte Neon",
+        subtitle: "Ficcao cientifica",
+        image: "https://images.unsplash.com/photo-1518929458119-e5bf444c30f4?auto=format&fit=crop&w=900&q=80",
+        aspect: "poster",
+        target: "movie"
+      },
+      {
+        id: "drop-2",
+        title: "Arquivo Zero",
+        subtitle: "Serie policial",
+        image: "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80",
+        aspect: "poster",
+        target: "series"
+      },
+      {
+        id: "drop-3",
+        title: "Velocidade Max",
+        subtitle: "Acao intensa",
+        image: "https://images.unsplash.com/photo-1504384308090-c894fdcc538d?auto=format&fit=crop&w=900&q=80",
+        aspect: "poster",
+        target: "movie"
+      }
+    ]
+  },
+  {
+    id: "featured-movies",
+    title: "Filmes em Destaque",
+    items: [
+      {
+        id: "movie-1",
+        title: "Ultima Fronteira",
+        subtitle: "Drama espacial",
+        image: "https://images.unsplash.com/photo-1440404653325-ab127d49abc1?auto=format&fit=crop&w=900&q=80",
+        aspect: "poster",
+        target: "movie"
+      },
+      {
+        id: "movie-2",
+        title: "Fuga de Midnight",
+        subtitle: "Suspense",
+        image: "https://images.unsplash.com/photo-1478720568477-152d9b164e26?auto=format&fit=crop&w=900&q=80",
+        aspect: "poster",
+        target: "movie"
+      },
+      {
+        id: "movie-3",
+        title: "Cidade Terminal",
+        subtitle: "Crime urbano",
+        image: "https://images.unsplash.com/photo-1513106580091-1d82408b8cd6?auto=format&fit=crop&w=900&q=80",
+        aspect: "poster",
+        target: "movie"
+      }
+    ]
+  },
+  {
+    id: "popular-series",
+    title: "Series Populares",
+    items: [
+      {
+        id: "series-1",
+        title: "Distrito 8",
+        subtitle: "Thriller politico",
+        image: "https://images.unsplash.com/photo-1485846234645-a62644f84728?auto=format&fit=crop&w=900&q=80",
+        aspect: "poster",
+        target: "series"
+      },
+      {
+        id: "series-2",
+        title: "Modo Noturno",
+        subtitle: "Cyber drama",
+        image: "https://images.unsplash.com/photo-1524985069026-dd778a71c7b4?auto=format&fit=crop&w=900&q=80",
+        aspect: "poster",
+        target: "series"
+      },
+      {
+        id: "series-3",
+        title: "Sinal Perdido",
+        subtitle: "Mistério",
+        image: "https://images.unsplash.com/photo-1487180144351-b8472da7d491?auto=format&fit=crop&w=900&q=80",
+        aspect: "poster",
+        target: "series"
+      }
+    ]
+  }
+] as const;
 
-function LaunchIcon({ kind }: { kind: "live" | "movie" | "series" | "playlists" | "settings" }) {
+function LaunchIcon({ kind }: { kind: "home" | "live" | "movie" | "series" | "favorites" | "epg" | "playlists" | "settings" }) {
+  if (kind === "home") {
+    return (
+      <svg viewBox="0 0 48 48" aria-hidden="true">
+        <path d="M10 22l14-11 14 11" />
+        <path d="M14 20v16h20V20" />
+        <path d="M20 36V26h8v10" />
+      </svg>
+    );
+  }
+
   if (kind === "live") {
     return (
       <svg viewBox="0 0 48 48" aria-hidden="true">
@@ -101,6 +254,27 @@ function LaunchIcon({ kind }: { kind: "live" | "movie" | "series" | "playlists" 
         <circle cx="14.5" cy="18" r="1.5" fill="currentColor" stroke="none" />
         <circle cx="14.5" cy="24" r="1.5" fill="currentColor" stroke="none" />
         <circle cx="14.5" cy="30" r="1.5" fill="currentColor" stroke="none" />
+      </svg>
+    );
+  }
+
+  if (kind === "favorites") {
+    return (
+      <svg viewBox="0 0 48 48" aria-hidden="true">
+        <path d="M24 37l-9.4 5 1.8-10.5L8.8 24l10.5-1.5L24 13l4.7 9.5L39.2 24l-7.6 7.5L33.4 42z" />
+      </svg>
+    );
+  }
+
+  if (kind === "epg") {
+    return (
+      <svg viewBox="0 0 48 48" aria-hidden="true">
+        <rect x="9" y="12" width="30" height="24" rx="5" />
+        <path d="M9 20h30" />
+        <path d="M17 12v-4" />
+        <path d="M31 12v-4" />
+        <path d="M17 26h6" />
+        <path d="M27 26h4" />
       </svg>
     );
   }
@@ -193,6 +367,49 @@ function getSeriesEpisodeLabel(channel: IPTVChannel) {
   return getItemLabel(channel);
 }
 
+function getStableNumberSeed(value: string) {
+  return [...value].reduce((seed, char) => seed + char.charCodeAt(0), 0);
+}
+
+function buildDetailMetadata(title: string, group?: string) {
+  const seed = getStableNumberSeed(`${title}-${group || ""}`);
+  const genres = [group || "Drama", "Suspense", "Acao", "Ficcao", "Aventura", "Crime"];
+  const people = [
+    "Maya Torres",
+    "Caio Ferraz",
+    "Luna Ribeiro",
+    "Theo Martins",
+    "Clara Salles",
+    "Enzo Vidal"
+  ];
+
+  return {
+    year: 2012 + (seed % 13),
+    duration: `${92 + (seed % 46)} min`,
+    rating: ["12", "14", "16", "18"][seed % 4],
+    genre: genres[seed % genres.length],
+    cast: `${people[seed % people.length]}, ${people[(seed + 2) % people.length]}, ${people[(seed + 4) % people.length]}`,
+    director: people[(seed + 1) % people.length]
+  };
+}
+
+function buildSeriesSynopsis(series: SeriesEntry) {
+  return `${series.title} acompanha personagens sob pressao em ${series.group || "um universo premium"}, com ritmo de maratona e gancho forte em cada episodio.`;
+}
+
+function buildMovieSynopsis(channel: IPTVChannel) {
+  return `${channel.name} entrega uma sessao cinematografica com atmosfera intensa, visual de destaque e narrativa pensada para uma experiencia de streaming premium.`;
+}
+
+function buildEpisodeRuntime(channel: IPTVChannel) {
+  const seed = getStableNumberSeed(channel.name);
+  return `${38 + (seed % 19)} min`;
+}
+
+function buildEpisodeSummary(channel: IPTVChannel, seriesTitle: string) {
+  return `Neste episodio de ${seriesTitle}, a trama avanca com novas revelacoes, tensao crescente e um gancho pensado para continuar a temporada.`;
+}
+
 function getPanelTitle(panel: HomePanel) {
   if (panel === "settings") {
     return "Settings";
@@ -271,6 +488,47 @@ function writePlaylistCache(playlistId: string, channels: IPTVChannel[]) {
   });
 }
 
+async function saveBackendPlaylistSnapshot(playlistId: string, channels: IPTVChannel[]) {
+  try {
+    await fetch(`/api/playlist-snapshots/${encodeURIComponent(playlistId)}`, {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({ channels })
+    });
+  } catch {
+    // Ignore backend snapshot failures; local cache is still attempted.
+  }
+}
+
+async function fetchBackendPlaylistSnapshot(playlistId: string) {
+  try {
+    const response = await fetch(`/api/playlist-snapshots/${encodeURIComponent(playlistId)}`, {
+      cache: "no-store"
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = (await response.json()) as { channels?: IPTVChannel[] };
+    return data.channels || null;
+  } catch {
+    return null;
+  }
+}
+
+async function deleteBackendPlaylistSnapshot(playlistId: string) {
+  try {
+    await fetch(`/api/playlist-snapshots/${encodeURIComponent(playlistId)}`, {
+      method: "DELETE"
+    });
+  } catch {
+    // Ignore backend snapshot cleanup failures.
+  }
+}
+
 function getEmptyAccessProfile(): AccessProfile {
   return {
     code: "",
@@ -339,6 +597,60 @@ function getCatalogDescription(channel: IPTVChannel | null, epgDescription?: str
   return `${channel.name} esta organizado em ${channel.group || "Series"} para navegacao por categoria.`;
 }
 
+function getProgramProgress(program: EPGProgram | null, now = Date.now()) {
+  if (!program) {
+    return 0;
+  }
+
+  if (now <= program.start) {
+    return 0;
+  }
+
+  if (now >= program.end) {
+    return 100;
+  }
+
+  return Math.max(0, Math.min(100, ((now - program.start) / (program.end - program.start)) * 100));
+}
+
+function floorToHalfHour(timestamp: number) {
+  const date = new Date(timestamp);
+  date.setMinutes(date.getMinutes() < 30 ? 0 : 30, 0, 0);
+  return date.getTime();
+}
+
+function formatGuideTick(timestamp: number) {
+  return new Intl.DateTimeFormat("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(timestamp);
+}
+
+function buildMockProgramsForChannel(channel: IPTVChannel, channelIndex: number, now = Date.now()): EPGProgram[] {
+  const slotStart = floorToHalfHour(now) - 30 * 60 * 1000;
+  const titles = [
+    `${channel.group || "Ao Vivo"} Express`,
+    `${channel.name} Newsline`,
+    `${channel.group || "Prime Time"} Especial`,
+    `${channel.name} Session`,
+    "Madrugada Replay"
+  ];
+
+  return titles.map((title, index) => {
+    const start = slotStart + index * 30 * 60 * 1000;
+    const end = start + 30 * 60 * 1000;
+
+    return {
+      channelId: channel.tvgId || channel.id,
+      channelName: channel.name,
+      title,
+      description: `Grade demonstrativa para ${channel.name}. Conecte um XMLTV para substituir este mock por EPG real.`,
+      start,
+      end
+    };
+  });
+}
+
 function getInitialBootPlaylistState() {
   const savedPlaylists = readStorage<SavedPlaylist[]>(PLAYLISTS_STORAGE_KEY, []).map((playlist) => ({
     ...playlist,
@@ -392,6 +704,10 @@ export function IPTVClient() {
   const [activeSeriesKey, setActiveSeriesKey] = useState<string | null>(null);
   const [activeSeasonNumber, setActiveSeasonNumber] = useState<number | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [liveViewMode, setLiveViewMode] = useState<"browse" | "guide">("browse");
+  const [liveGuideFocus, setLiveGuideFocus] = useState({ row: 0, column: 0 });
+  const [guideBaseTime] = useState(() => floorToHalfHour(Date.now()));
   const [listScrollTop, setListScrollTop] = useState(0);
   const [gridColumns, setGridColumns] = useState(3);
 
@@ -535,6 +851,10 @@ export function IPTVClient() {
 
     return [...counts.entries()].map(([group, count]) => ({ group, count }));
   }, [activeTab, tabChannels]);
+
+  const categoryBrowserEntries = useMemo(() => {
+    return [{ group: "all", count: tabChannels.length }, ...categoryEntries];
+  }, [categoryEntries, tabChannels.length]);
 
   const filteredChannels = useMemo(() => {
     const normalizedQuery = normalizeSearchValue(deferredQuery.trim());
@@ -723,9 +1043,87 @@ export function IPTVClient() {
     return getProgramsForChannel(epgIndex, selectedChannel.tvgId, selectedChannel.name);
   }, [epgIndex, selectedChannel]);
 
+  const liveProgramsByChannel = useMemo(() => {
+    const entries = new Map<string, EPGProgram[]>();
+    const liveChannels = filteredChannels.filter((channel) => channel.catalog === "live");
+
+    liveChannels.forEach((channel, index) => {
+      const realPrograms = getProgramsForChannel(epgIndex, channel.tvgId, channel.name);
+      entries.set(channel.id, realPrograms.length ? realPrograms : buildMockProgramsForChannel(channel, index));
+    });
+
+    return entries;
+  }, [epgIndex, filteredChannels]);
+
+  const effectiveSelectedPrograms = useMemo(() => {
+    if (activeTab === "live" && selectedChannel) {
+      return liveProgramsByChannel.get(selectedChannel.id) || [];
+    }
+
+    return selectedPrograms;
+  }, [activeTab, liveProgramsByChannel, selectedChannel, selectedPrograms]);
+
   const { currentProgram, upcomingPrograms } = useMemo(() => {
-    return getCurrentAndNextPrograms(selectedPrograms);
-  }, [selectedPrograms]);
+    return getCurrentAndNextPrograms(effectiveSelectedPrograms);
+  }, [effectiveSelectedPrograms]);
+
+  const liveCategoryLabel = activeGroup === "all" ? "Todos" : activeGroup;
+
+  const liveGuideSlots = useMemo(
+    () => Array.from({ length: 6 }, (_, index) => guideBaseTime + index * 30 * 60 * 1000),
+    [guideBaseTime]
+  );
+
+  const liveGuideRows = useMemo(() => {
+    if (activeTab !== "live") {
+      return [];
+    }
+
+    const windowStart = liveGuideSlots[0] || guideBaseTime;
+    const windowEnd = (liveGuideSlots[liveGuideSlots.length - 1] || windowStart) + 30 * 60 * 1000;
+
+    return filteredChannels
+      .filter((channel) => channel.catalog === "live")
+      .slice(0, 18)
+      .map((channel) => {
+        const programs = (liveProgramsByChannel.get(channel.id) || []).filter(
+          (program) => program.end > windowStart && program.start < windowEnd
+        );
+
+        const cells = programs.map((program) => {
+          const startIndex = Math.max(0, Math.floor((program.start - windowStart) / (30 * 60 * 1000)));
+          const endIndex = Math.max(startIndex + 1, Math.ceil((program.end - windowStart) / (30 * 60 * 1000)));
+
+          return {
+            key: `${channel.id}-${program.start}`,
+            program,
+            startIndex,
+            span: Math.max(1, Math.min(liveGuideSlots.length - startIndex, endIndex - startIndex))
+          };
+        });
+
+        return {
+          channel,
+          cells
+        };
+      });
+  }, [activeTab, filteredChannels, guideBaseTime, liveGuideSlots, liveProgramsByChannel]);
+
+  useEffect(() => {
+    if (activeTab !== "live" || liveViewMode !== "guide" || typeof document === "undefined") {
+      return;
+    }
+
+    const rowIndex = Math.min(liveGuideFocus.row, Math.max(0, liveGuideRows.length - 1));
+    const row = liveGuideRows[rowIndex];
+
+    if (!row) {
+      return;
+    }
+
+    const columnIndex = Math.min(liveGuideFocus.column, Math.max(0, row.cells.length - 1));
+    document.querySelector<HTMLButtonElement>(`[data-guide-cell="${rowIndex}-${columnIndex}"]`)?.focus();
+  }, [activeTab, liveGuideFocus, liveGuideRows, liveViewMode]);
 
   const selectedDescription = useMemo(() => {
     return getCatalogDescription(selectedChannel, currentProgram?.description);
@@ -734,6 +1132,40 @@ export function IPTVClient() {
   const focusedSeries = activeTab === "series" ? activeSeries : null;
   const isFocusedMediaDetail = Boolean(focusedMovie || focusedSeries);
   const currentPlayerChannel = activeTab === "live" ? selectedChannel : null;
+  const showLiveGuide = activeTab === "live" && liveViewMode === "guide";
+  const focusedMovieMeta = focusedMovie ? buildDetailMetadata(focusedMovie.name, focusedMovie.group) : null;
+  const focusedSeriesMeta = focusedSeries ? buildDetailMetadata(focusedSeries.title, focusedSeries.group) : null;
+  const heroBackdrop =
+    (focusedMovie?.logo || focusedSeries?.logo || selectedChannel?.logo || HOME_HERO.image);
+
+  const dashboardRails = useMemo<HomeRail[]>(() => {
+    const buildItem = (channel: IndexedChannel): HomeRailItem => ({
+      id: channel.id,
+      title: channel.name,
+      subtitle: channel.group || getCatalogLabel(channel.catalog),
+      image: channel.logo || HOME_HERO.image,
+      aspect: channel.catalog === "live" ? "wide" : "poster",
+      target: channel.catalog
+    });
+
+    const recentLive = recentChannels.filter((channel) => channel.catalog === "live").slice(0, 12).map(buildItem);
+    const featuredMovies = catalogIndex.byCatalog.movie.slice(0, 12).map(buildItem);
+    const featuredSeries = seriesEntries.slice(0, 12).map((entry) => ({
+      id: entry.key,
+      title: entry.title,
+      subtitle: `${entry.seasons.length} temporadas`,
+      image: entry.logo || HOME_HERO.image,
+      aspect: "poster" as const,
+      target: "series" as const
+    }));
+
+    return [
+      { ...HOME_RAILS_MOCK[0], items: recentLive.length ? recentLive : [...HOME_RAILS_MOCK[0].items] },
+      { ...HOME_RAILS_MOCK[1] },
+      { ...HOME_RAILS_MOCK[2], items: featuredMovies.length ? featuredMovies : [...HOME_RAILS_MOCK[2].items] },
+      { ...HOME_RAILS_MOCK[3], items: featuredSeries.length ? featuredSeries : [...HOME_RAILS_MOCK[3].items] }
+    ];
+  }, [catalogIndex.byCatalog.movie, recentChannels, seriesEntries]);
 
   function rememberRecentChannel(channel: IPTVChannel | null) {
     if (!channel) {
@@ -806,6 +1238,7 @@ export function IPTVClient() {
 
   function cacheLoadedPlaylist(playlistId: string, nextChannels: IPTVChannel[]) {
     const cacheResult = writePlaylistCache(playlistId, nextChannels);
+    void saveBackendPlaylistSnapshot(playlistId, nextChannels);
     return cacheResult.ok;
   }
 
@@ -823,6 +1256,10 @@ export function IPTVClient() {
     setActiveTab(nextTab);
     setActivePanel("catalog");
     setActiveGroup(getPreferredGroup(nextTabChannels, nextTab));
+    if (nextTab === "live") {
+      setLiveViewMode("browse");
+    }
+    setLiveGuideFocus({ row: 0, column: 0 });
     setQuery("");
     setListScrollTop(0);
     setSelectedId(null);
@@ -841,6 +1278,10 @@ export function IPTVClient() {
     if (selectedChannel?.catalog === "series") {
       setPlayingId(selectedChannel.id);
     }
+  }
+
+  function handleTrailerIntent(title: string) {
+    setStatus(`Trailer de ${title} indisponivel nesta playlist.`);
   }
 
   function closeFocusedCatalogView() {
@@ -1049,15 +1490,25 @@ export function IPTVClient() {
     setError(null);
 
     try {
-      const cachedPlaylist = options?.preferCache ? readPlaylistCache(playlist.id) : null;
+      const localCachedPlaylist = options?.preferCache ? readPlaylistCache(playlist.id) : null;
+      const cachedChannels =
+        localCachedPlaylist?.channels.length
+          ? localCachedPlaylist.channels
+          : options?.preferCache
+            ? await fetchBackendPlaylistSnapshot(playlist.id)
+            : null;
 
-      if (cachedPlaylist?.channels.length) {
+      if (cachedChannels?.length) {
+        if (!localCachedPlaylist?.channels.length) {
+          writePlaylistCache(playlist.id, cachedChannels);
+        }
+
         hydratePlaylistFields(playlist, playlist.content);
         applyLoadedChannels(
-          cachedPlaylist.channels,
+          cachedChannels,
           options?.restoreOnBoot
             ? `Playlist ${playlist.name} restaurada automaticamente.`
-            : `Playlist ${playlist.name} aberta do cache local.`,
+            : `Playlist ${playlist.name} aberta do cache salvo.`,
           playlist.id
         );
 
@@ -1138,6 +1589,7 @@ export function IPTVClient() {
 
     setSavedPlaylists((current) => current.filter((playlist) => playlist.id !== playlistId));
     removeStorage(getPlaylistCacheStorageKey(playlistId));
+    void deleteBackendPlaylistSnapshot(playlistId);
 
     if (activePlaylistId === playlistId) {
       setActivePlaylistId(null);
@@ -1192,88 +1644,165 @@ export function IPTVClient() {
     }
   }
 
+  function openSidebarTarget(target: "home" | "live" | "movie" | "series" | "favorites" | "epg" | "settings") {
+    if (target === "home") {
+      setActivePanel("none");
+      setPlayingId(null);
+      return;
+    }
+
+    if (target === "settings") {
+      openPanel("settings");
+      return;
+    }
+
+    if (target === "favorites") {
+      const favorite = favoriteChannels[0] || null;
+
+      if (favorite) {
+        selectChannel(favorite);
+        return;
+      }
+
+      openCatalogPanel("movie");
+      return;
+    }
+
+    if (target === "epg") {
+      openCatalogPanel("live");
+      if (catalogIndex.byCatalog.live[0]) {
+        selectChannel(catalogIndex.byCatalog.live[0]);
+      }
+      return;
+    }
+
+    openCatalogPanel(target);
+  }
+
+  function openHomeRailItem(item: HomeRailItem) {
+    openCatalogPanel(item.target);
+  }
+
   return (
-    <main className="iptv-shell">
-      <section className="iptv-home card">
-        <div className="home-backdrop" />
-        <div className="home-brand">
-          <p className="eyebrow">Eztrogun IPTV</p>
-          <h1>Assist+</h1>
-        </div>
-
-        <div className="launch-grid">
-          <button
-            type="button"
-            className={`launch-card ${activePanel === "catalog" && activeTab === "live" ? "active" : ""}`}
-            onClick={() => openCatalogPanel("live")}
-          >
-            <span className="launch-icon">
-              <LaunchIcon kind="live" />
-            </span>
-            <strong>Live TV</strong>
-            <span>{catalogCounts.live} itens</span>
+    <main className={`iptv-shell assist-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
+      <aside className={`assist-sidebar ${sidebarCollapsed ? "collapsed" : ""}`}>
+        <div className="assist-sidebar-top">
+          <button type="button" className="assist-brand" onClick={() => openSidebarTarget("home")}>
+            <span className="assist-brand-badge">A+</span>
+            {!sidebarCollapsed ? <strong>Assist+</strong> : null}
           </button>
           <button
             type="button"
-            className={`launch-card ${activePanel === "catalog" && activeTab === "movie" ? "active" : ""}`}
-            onClick={() => openCatalogPanel("movie")}
+            className="assist-toggle"
+            onClick={() => setSidebarCollapsed((current) => !current)}
+            aria-label={sidebarCollapsed ? "Expandir menu" : "Recolher menu"}
           >
-            <span className="launch-icon">
-              <LaunchIcon kind="movie" />
-            </span>
-            <strong>Movies</strong>
-            <span>{catalogCounts.movie} itens</span>
-          </button>
-          <button
-            type="button"
-            className={`launch-card ${activePanel === "catalog" && activeTab === "series" ? "active" : ""}`}
-            onClick={() => openCatalogPanel("series")}
-          >
-            <span className="launch-icon">
-              <LaunchIcon kind="series" />
-            </span>
-            <strong>Series</strong>
-            <span>{catalogCounts.series} itens</span>
-          </button>
-          <button
-            type="button"
-            className={`launch-card ${activePanel === "playlists" ? "active" : ""}`}
-            onClick={() => openPanel("playlists")}
-          >
-            <span className="launch-icon">
-              <LaunchIcon kind="playlists" />
-            </span>
-            <strong>Playlists</strong>
-            <span>{savedPlaylists.length} salvas</span>
-          </button>
-          <button
-            type="button"
-            className={`launch-card ${activePanel === "settings" ? "active" : ""}`}
-            onClick={() => openPanel("settings")}
-          >
-            <span className="launch-icon">
-              <LaunchIcon kind="settings" />
-            </span>
-            <strong>Settings</strong>
-            <span>Acesso local</span>
+            {sidebarCollapsed ? ">" : "<"}
           </button>
         </div>
 
-        <button
-          type="button"
-          className="home-reload"
-          disabled={!activePlaylist}
-          onClick={() => activePlaylist && openSavedPlaylist(activePlaylist)}
-        >
-          <span>Reload</span>
-          <strong>{activePlaylist ? activePlaylist.name : "Nenhuma playlist ativa"}</strong>
-        </button>
+        <nav className="assist-nav">
+          {[
+            { key: "home", label: "Inicio", icon: "home" },
+            { key: "live", label: "TV ao Vivo", icon: "live" },
+            { key: "movie", label: "Filmes", icon: "movie" },
+            { key: "series", label: "Series", icon: "series" },
+            { key: "favorites", label: "Favoritos", icon: "favorites" },
+            { key: "epg", label: "Guia EPG", icon: "epg" },
+            { key: "settings", label: "Configuracoes", icon: "settings" }
+          ].map((item) => {
+            const isActive =
+              (item.key === "home" && activePanel === "none") ||
+              (item.key === "live" && activePanel === "catalog" && activeTab === "live") ||
+              (item.key === "movie" && activePanel === "catalog" && activeTab === "movie") ||
+              (item.key === "series" && activePanel === "catalog" && activeTab === "series") ||
+              (item.key === "settings" && activePanel === "settings");
 
-        <div className="home-meta">
-          <span>{status}</span>
-          <span>{activePlaylist?.name || "Sem playlist ativa"}</span>
-        </div>
-      </section>
+            return (
+              <button
+                key={item.key}
+                type="button"
+                className={`assist-nav-item ${isActive ? "active" : ""}`}
+                onClick={() => openSidebarTarget(item.key as "home" | "live" | "movie" | "series" | "favorites" | "epg" | "settings")}
+              >
+                <span className="launch-icon">
+                  <LaunchIcon kind={item.icon as "home" | "live" | "movie" | "series" | "favorites" | "epg" | "settings"} />
+                </span>
+                {!sidebarCollapsed ? <span>{item.label}</span> : null}
+              </button>
+            );
+          })}
+        </nav>
+
+        {!sidebarCollapsed ? (
+          <div className="assist-sidebar-foot">
+            <button type="button" className="assist-playlist-chip" onClick={() => openPanel("playlists")}>
+              <strong>{savedPlaylists.length}</strong>
+              <span>Playlists</span>
+            </button>
+            <small>{activePlaylist?.name || "Sem playlist ativa"}</small>
+          </div>
+        ) : null}
+      </aside>
+
+      <div className="assist-content">
+        <section className="assist-home-screen card">
+          <div className="assist-hero" style={{ backgroundImage: `linear-gradient(90deg, rgba(7,10,16,0.92), rgba(7,10,16,0.42)), url(${heroBackdrop})` }}>
+            <div className="assist-hero-copy">
+              <p className="eyebrow">{HOME_HERO.eyebrow}</p>
+              <h1>{HOME_HERO.title}</h1>
+              <p>{HOME_HERO.description}</p>
+              <div className="assist-hero-actions">
+                <button type="button" onClick={() => (activePlaylist ? openCatalogPanel("movie") : openPanel("playlists"))}>
+                  Assistir Agora
+                </button>
+                <button type="button" className="ghost-button" onClick={() => openCatalogPanel("series")}>
+                  Trailer
+                </button>
+              </div>
+            </div>
+            <div className="assist-hero-status">
+              <article>
+                <span>Playlist</span>
+                <strong>{activePlaylist?.name || "Demo visual"}</strong>
+              </article>
+              <article>
+                <span>Status</span>
+                <strong>{status}</strong>
+              </article>
+            </div>
+          </div>
+
+          <div className="assist-rails">
+            {dashboardRails.map((rail) => (
+              <section key={rail.id} className="assist-rail">
+                <div className="assist-rail-head">
+                  <h2>{rail.title}</h2>
+                  <span>{rail.items.length} itens</span>
+                </div>
+                <div className="assist-rail-track">
+                  {rail.items.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={`assist-rail-card ${item.aspect === "wide" ? "wide" : "poster"}`}
+                      onClick={() => openHomeRailItem(item)}
+                    >
+                      <div className="assist-rail-art">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={item.image} alt={item.title} loading="lazy" />
+                      </div>
+                      <div className="assist-rail-copy">
+                        <strong>{item.title}</strong>
+                        <span>{item.subtitle}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        </section>
 
       <section className={`iptv-layout ${isWideCatalogFocus ? "catalog-focus-layout" : ""}`}>
         {!isWideCatalogFocus ? (
@@ -1499,7 +2028,7 @@ export function IPTVClient() {
             </div>
           </div>
 
-          {currentPlayerChannel ? (
+          {currentPlayerChannel && activeTab !== "live" ? (
             <div className="card player-card">
               <IPTVPlayer channel={currentPlayerChannel} />
             </div>
@@ -1564,13 +2093,40 @@ export function IPTVClient() {
                   onChange={(event) => {
                     setQuery(event.target.value);
                     setListScrollTop(0);
+                    setLiveGuideFocus({ row: 0, column: 0 });
                   }}
                 />
+                {activeTab === "live" ? (
+                  <div className="view-toggle-group">
+                    <button
+                      type="button"
+                      className={liveViewMode === "browse" ? "active" : ""}
+                      onClick={() => {
+                        setLiveViewMode("browse");
+                        setLiveGuideFocus({ row: 0, column: 0 });
+                      }}
+                    >
+                      Lista
+                    </button>
+                    <button
+                      type="button"
+                      className={liveViewMode === "guide" ? "active" : ""}
+                      onClick={() => {
+                        setLiveViewMode("guide");
+                        setLiveGuideFocus({ row: 0, column: 0 });
+                      }}
+                    >
+                      Modo Guia
+                    </button>
+                  </div>
+                ) : null}
               </div>
             </div>
 
             <div
               className={`browser-layout ${isWideCatalogFocus ? "browser-layout-movie" : ""} ${
+                activeTab === "live" ? "browser-layout-live" : ""
+              } ${
                 isFocusedMediaDetail ? "browser-layout-detail" : ""
               }`}
             >
@@ -1578,11 +2134,11 @@ export function IPTVClient() {
               <div className="category-column">
                 <div className="browser-titlebar">
                   <strong>Categorias</strong>
-                  <span>{categoryEntries.length}</span>
+                  <span>{categoryBrowserEntries.length}</span>
                 </div>
 
                 <div className="category-list">
-                  {categoryEntries.map((entry) => (
+                  {categoryBrowserEntries.map((entry) => (
                     <button
                       key={entry.group}
                       type="button"
@@ -1590,6 +2146,7 @@ export function IPTVClient() {
                       onClick={() => {
                         setActiveGroup(entry.group);
                         setListScrollTop(0);
+                        setLiveGuideFocus({ row: 0, column: 0 });
                       }}
                     >
                       <strong>{entry.group}</strong>
@@ -1602,23 +2159,126 @@ export function IPTVClient() {
 
               <div className="items-column">
                 <div className="browser-titlebar">
-                  <strong>{activeGroup === "all" ? "Todos os grupos" : activeGroup}</strong>
+                  <strong>{activeTab === "live" ? liveCategoryLabel : activeGroup === "all" ? "Todos os grupos" : activeGroup}</strong>
                   <span>{itemBrowserCount}</span>
                 </div>
 
                 {activeTab === "live" ? (
-                  <div className="channel-list" onScroll={(event) => setListScrollTop(event.currentTarget.scrollTop)}>
+                  showLiveGuide ? (
+                    <div className="live-guide-shell" tabIndex={0}>
+                      <div className="live-guide-header">
+                        <div className="live-guide-channel-label">Canais</div>
+                        <div className="live-guide-times">
+                          {liveGuideSlots.map((slot) => (
+                            <span key={slot}>{formatGuideTick(slot)}</span>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="live-guide-grid">
+                        {liveGuideRows.map((row, rowIndex) => (
+                          <div key={row.channel.id} className="live-guide-row">
+                            <button type="button" className="live-guide-channel" onClick={() => selectChannel(row.channel)}>
+                              {row.channel.logo ? (
+                                <span className="media-thumb live-thumb">
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img src={row.channel.logo} alt={row.channel.name} loading="lazy" />
+                                </span>
+                              ) : null}
+                              <div>
+                                <strong>{row.channel.name}</strong>
+                                <span>{getChannelNumber(row.channel)}</span>
+                              </div>
+                            </button>
+
+                            <div className="live-guide-program-row">
+                              {row.cells.length ? (
+                                row.cells.map((cell, cellIndex) => (
+                                  <button
+                                    key={cell.key}
+                                    type="button"
+                                    data-guide-cell={`${rowIndex}-${cellIndex}`}
+                                    className={`live-guide-program ${
+                                      rowIndex === liveGuideFocus.row && cellIndex === liveGuideFocus.column ? "active" : ""
+                                    }`}
+                                    style={{ gridColumn: `${cell.startIndex + 1} / span ${cell.span}` }}
+                                    onClick={() => {
+                                      setLiveGuideFocus({ row: rowIndex, column: cellIndex });
+                                      selectChannel(row.channel);
+                                    }}
+                                    onFocus={() => selectChannel(row.channel)}
+                                    onKeyDown={(event) => {
+                                      if (event.key === "ArrowRight") {
+                                        event.preventDefault();
+                                        setLiveGuideFocus((current) => ({
+                                          row: current.row,
+                                          column: Math.min(current.column + 1, row.cells.length - 1)
+                                        }));
+                                      } else if (event.key === "ArrowLeft") {
+                                        event.preventDefault();
+                                        setLiveGuideFocus((current) => ({
+                                          row: current.row,
+                                          column: Math.max(current.column - 1, 0)
+                                        }));
+                                      } else if (event.key === "ArrowDown") {
+                                        event.preventDefault();
+                                        setLiveGuideFocus((current) => {
+                                          const nextRow = Math.min(current.row + 1, liveGuideRows.length - 1);
+                                          return {
+                                            row: nextRow,
+                                            column: Math.min(
+                                              current.column,
+                                              Math.max(0, (liveGuideRows[nextRow]?.cells.length || 1) - 1)
+                                            )
+                                          };
+                                        });
+                                      } else if (event.key === "ArrowUp") {
+                                        event.preventDefault();
+                                        setLiveGuideFocus((current) => {
+                                          const nextRow = Math.max(current.row - 1, 0);
+                                          return {
+                                            row: nextRow,
+                                            column: Math.min(
+                                              current.column,
+                                              Math.max(0, (liveGuideRows[nextRow]?.cells.length || 1) - 1)
+                                            )
+                                          };
+                                        });
+                                      }
+                                    }}
+                                  >
+                                    <strong>{cell.program.title}</strong>
+                                    <span>{formatProgramTimeRange(cell.program)}</span>
+                                  </button>
+                                ))
+                              ) : (
+                                <div className="live-guide-empty">Sem grade</div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {liveGuideRows.length === 0 ? (
+                        <div className="empty-state">
+                          <strong>Nenhum canal encontrado.</strong>
+                          <span>Troque de categoria ou refine a busca.</span>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : (
+                  <div className="channel-list live-channel-list" onScroll={(event) => setListScrollTop(event.currentTarget.scrollTop)}>
                   <div style={{ height: topSpacerHeight }} aria-hidden="true" />
                   {visibleChannels.map((channel) => (
                     <button
                       key={channel.id}
                       type="button"
-                      className={`channel-item ${channel.id === selectedChannel?.id ? "active" : ""}`}
+                      className={`channel-item live-channel-item ${channel.id === selectedChannel?.id ? "active" : ""}`}
                       onClick={() => selectChannel(channel)}
                     >
                       <div className="channel-copy">
                         {channel.logo ? (
-                          <span className={`media-thumb ${activeTab === "live" ? "live-thumb" : ""}`}>
+                          <span className="media-thumb live-thumb">
                             {/* Arbitrary playlist logos come from unknown remote domains. */}
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img src={channel.logo} alt={channel.name} loading="lazy" />
@@ -1627,9 +2287,40 @@ export function IPTVClient() {
                         <div>
                           <strong>{channel.name}</strong>
                           <span>{channel.group || "Sem categoria"}</span>
+                          <small>{getCurrentAndNextPrograms(liveProgramsByChannel.get(channel.id) || []).currentProgram?.title || "Programacao demonstrativa"}</small>
                         </div>
                       </div>
-                      <div className="channel-meta">
+                      <div className="live-channel-meta">
+                        <div className="live-now-card">
+                          <span>
+                            {(() => {
+                              const liveNow = getCurrentAndNextPrograms(liveProgramsByChannel.get(channel.id) || []).currentProgram;
+                              return liveNow ? formatProgramTimeRange(liveNow) : "Ao vivo";
+                            })()}
+                          </span>
+                          <strong>
+                            {(() => {
+                              const liveNow = getCurrentAndNextPrograms(liveProgramsByChannel.get(channel.id) || []).currentProgram;
+                              return liveNow?.title || channel.name;
+                            })()}
+                          </strong>
+                          <div className="live-progress-bar">
+                            <span
+                              style={{
+                                width: `${getProgramProgress(
+                                  getCurrentAndNextPrograms(liveProgramsByChannel.get(channel.id) || []).currentProgram
+                                )}%`
+                              }}
+                            />
+                          </div>
+                          <small>
+                            {(() => {
+                              const liveUpcoming = getCurrentAndNextPrograms(liveProgramsByChannel.get(channel.id) || []).upcomingPrograms;
+                              return liveUpcoming[0] ? `Proximo: ${liveUpcoming[0].title}` : "EPG mock ativo";
+                            })()}
+                          </small>
+                        </div>
+                        <div className="channel-meta">
                         <small>{getChannelNumber(channel)}</small>
                         <span
                           role="button"
@@ -1654,6 +2345,7 @@ export function IPTVClient() {
                         >
                           ★
                         </span>
+                        </div>
                       </div>
                     </button>
                   ))}
@@ -1666,8 +2358,18 @@ export function IPTVClient() {
                     </div>
                   ) : null}
                   </div>
+                  ) 
                 ) : activeTab === "movie" && focusedMovie ? (
-                  <div className="focused-media-screen">
+                  <div
+                    className={`focused-media-screen cinematic-detail-screen ${
+                      focusedMovie.logo ? "has-backdrop" : ""
+                    }`}
+                    style={
+                      focusedMovie.logo
+                        ? { backgroundImage: `linear-gradient(90deg, rgba(3,5,9,0.96) 0%, rgba(3,5,9,0.82) 38%, rgba(3,5,9,0.36) 100%), linear-gradient(0deg, rgba(3,5,9,0.98) 0%, rgba(3,5,9,0.12) 54%), url(${focusedMovie.logo})` }
+                        : undefined
+                    }
+                  >
                     <button type="button" className="ghost-button focused-back" onClick={closeFocusedCatalogView}>
                       Voltar para filmes
                     </button>
@@ -1676,26 +2378,66 @@ export function IPTVClient() {
                         <IPTVPlayer channel={playingChannel} />
                       </div>
                     ) : (
-                      <div className={`focused-media-poster ${focusedMovie.logo ? "has-image" : ""}`}>
-                        {focusedMovie.logo ? (
-                          /* eslint-disable-next-line @next/next/no-img-element */
-                          <img src={focusedMovie.logo} alt={focusedMovie.name} loading="lazy" />
-                        ) : null}
-                        <div className="focused-media-overlay">
-                          <span>Filme</span>
-                          <strong>{focusedMovie.name}</strong>
-                          <small>{focusedMovie.group || "Sem categoria"}</small>
-                          <div className="focused-media-actions">
-                            <button type="button" className="play-inside-poster" onClick={openMoviePlayback}>
-                              Play
+                      <div className="cinematic-detail-layout">
+                        <div className="cinematic-copy">
+                          <span className="cinematic-kicker">Filme em destaque</span>
+                          <h1>{focusedMovie.name}</h1>
+                          <div className="cinematic-meta">
+                            <span>{focusedMovieMeta?.year}</span>
+                            <span>{focusedMovieMeta?.duration}</span>
+                            <span>{focusedMovieMeta?.rating}+</span>
+                            <span>{focusedMovieMeta?.genre}</span>
+                          </div>
+                          <p className="cinematic-synopsis">{buildMovieSynopsis(focusedMovie)}</p>
+                          <div className="cinematic-credits">
+                            <small><strong>Elenco:</strong> {focusedMovieMeta?.cast}</small>
+                            <small><strong>Direcao:</strong> {focusedMovieMeta?.director}</small>
+                          </div>
+                          <div className="cinematic-actions">
+                            <button type="button" className="cinematic-primary" onClick={openMoviePlayback}>
+                              Assistir
                             </button>
+                            <button
+                              type="button"
+                              className="ghost-button"
+                              onClick={() => handleTrailerIntent(focusedMovie.name)}
+                            >
+                              Trailer
+                            </button>
+                            <button
+                              type="button"
+                              className={`ghost-button ${
+                                favoriteIds.includes(getChannelStorageId(focusedMovie)) ? "active-chip" : ""
+                              }`}
+                              onClick={() => toggleFavorite(focusedMovie)}
+                            >
+                              + Favoritos
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="cinematic-poster-rail">
+                          <div className={`focused-media-poster compact-poster ${focusedMovie.logo ? "has-image" : ""}`}>
+                            {focusedMovie.logo ? (
+                              /* eslint-disable-next-line @next/next/no-img-element */
+                              <img src={focusedMovie.logo} alt={focusedMovie.name} loading="lazy" />
+                            ) : null}
                           </div>
                         </div>
                       </div>
                     )}
                   </div>
                 ) : activeTab === "series" && focusedSeries ? (
-                  <div className="focused-media-screen focused-series-screen">
+                  <div
+                    className={`focused-media-screen focused-series-screen cinematic-detail-screen ${
+                      focusedSeries.logo ? "has-backdrop" : ""
+                    }`}
+                    style={
+                      focusedSeries.logo
+                        ? { backgroundImage: `linear-gradient(90deg, rgba(3,5,9,0.97) 0%, rgba(3,5,9,0.84) 36%, rgba(3,5,9,0.4) 100%), linear-gradient(0deg, rgba(3,5,9,0.98) 0%, rgba(3,5,9,0.1) 54%), url(${focusedSeries.logo})` }
+                        : undefined
+                    }
+                  >
                     <button type="button" className="ghost-button focused-back" onClick={closeFocusedCatalogView}>
                       Voltar para series
                     </button>
@@ -1704,73 +2446,113 @@ export function IPTVClient() {
                         <IPTVPlayer channel={playingChannel} />
                       </div>
                     ) : (
-                      <div className={`focused-media-poster ${focusedSeries.logo ? "has-image" : ""}`}>
-                        {focusedSeries.logo ? (
-                          /* eslint-disable-next-line @next/next/no-img-element */
-                          <img src={focusedSeries.logo} alt={focusedSeries.title} loading="lazy" />
-                        ) : null}
-                        <div className="focused-media-overlay">
-                          <span>Serie</span>
-                          <strong>{focusedSeries.title}</strong>
-                          <small>{focusedSeries.group || "Sem categoria"}</small>
-                          <div className="focused-media-metrics">
+                      <div className="cinematic-detail-layout cinematic-series-layout">
+                        <div className="cinematic-copy">
+                          <span className="cinematic-kicker">Serie premium</span>
+                          <h1>{focusedSeries.title}</h1>
+                          <div className="cinematic-meta">
+                            <span>{focusedSeriesMeta?.year}</span>
                             <span>{focusedSeries.seasons.length} temporadas</span>
                             <span>{focusedSeries.episodes.length} episodios</span>
+                            <span>{focusedSeriesMeta?.genre}</span>
                           </div>
-                          {selectedChannel ? (
-                            <div className="focused-media-actions">
-                              <button type="button" className="play-inside-poster" onClick={openSeriesPlayback}>
-                                Play
-                              </button>
-                            </div>
-                          ) : null}
+                          <p className="cinematic-synopsis">{buildSeriesSynopsis(focusedSeries)}</p>
+                          <div className="cinematic-credits">
+                            <small><strong>Elenco:</strong> {focusedSeriesMeta?.cast}</small>
+                            <small><strong>Criacao:</strong> {focusedSeriesMeta?.director}</small>
+                          </div>
+                          <div className="cinematic-actions">
+                            <button
+                              type="button"
+                              className="cinematic-primary"
+                              onClick={openSeriesPlayback}
+                              disabled={!selectedChannel}
+                            >
+                              Assistir
+                            </button>
+                            <button
+                              type="button"
+                              className="ghost-button"
+                              onClick={() => handleTrailerIntent(focusedSeries.title)}
+                            >
+                              Trailer
+                            </button>
+                            <button
+                              type="button"
+                              className={`ghost-button ${
+                                selectedChannel && favoriteIds.includes(getChannelStorageId(selectedChannel)) ? "active-chip" : ""
+                              }`}
+                              onClick={() => toggleFavorite(selectedChannel || focusedSeries.episodes[0] || null)}
+                            >
+                              + Favoritos
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="cinematic-poster-rail">
+                          <div className={`focused-media-poster compact-poster ${focusedSeries.logo ? "has-image" : ""}`}>
+                            {focusedSeries.logo ? (
+                              /* eslint-disable-next-line @next/next/no-img-element */
+                              <img src={focusedSeries.logo} alt={focusedSeries.title} loading="lazy" />
+                            ) : null}
+                          </div>
                         </div>
                       </div>
                     )}
 
-                    <div className="series-detail-layout">
-                      <div className="epg-panel">
+                    <div className="series-detail-layout luxury-season-layout">
+                      <div className="season-selector-panel">
                         <div className="browser-titlebar">
-                          <strong>Temporadas</strong>
-                          <span>{focusedSeries.seasons.length}</span>
+                          <strong>Temporada</strong>
+                          <span>{focusedSeries.seasons.length} disponiveis</span>
                         </div>
-                        <div className="season-chip-row season-chip-grid">
-                          {focusedSeries.seasons.map((season) => (
-                            <button
-                              key={season.label}
-                              type="button"
-                              className={`season-chip ${focusedSeason?.label === season.label ? "active" : ""}`}
-                              onClick={() => {
-                                setActiveSeasonNumber(season.seasonNumber);
-                                setSelectedId(null);
-                                setPlayingId(null);
-                              }}
-                            >
-                              <strong>{season.label}</strong>
-                              <span>{season.episodes.length} eps</span>
-                            </button>
-                          ))}
-                        </div>
+                        <label className="season-select-shell">
+                          <span>Selecione a temporada</span>
+                          <select
+                            value={String(activeSeasonNumber ?? "")}
+                            onChange={(event) => {
+                              const nextValue = event.target.value;
+                              setActiveSeasonNumber(nextValue ? Number(nextValue) : null);
+                              setSelectedId(null);
+                              setPlayingId(null);
+                            }}
+                          >
+                            {focusedSeries.seasons.map((season) => (
+                              <option key={season.label} value={season.seasonNumber ?? ""}>
+                                {season.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
                       </div>
 
-                      <div className="epg-panel">
+                      <div className="episode-list-panel">
                         <div className="browser-titlebar">
                           <strong>{focusedSeason?.label || "Episodios"}</strong>
                           <span>{focusedSeason?.episodes.length || 0}</span>
                         </div>
-                        <div className="timeline-list">
+                        <div className="episode-list-luxury">
                           {focusedSeason ? (
-                            focusedSeason.episodes.map((episode) => (
+                            focusedSeason.episodes.map((episode, index) => (
                               <button
                                 key={episode.id}
                                 type="button"
-                                className={`timeline-item ${episode.id === selectedChannel?.id ? "active" : ""}`}
+                                className={`episode-card ${episode.id === selectedChannel?.id ? "active" : ""}`}
                                 onClick={() => selectChannel(episode)}
                               >
-                                <span className="timeline-dot" />
-                                <div>
-                                  <strong>{episode.name}</strong>
+                                <div className="episode-thumb">
+                                  {episode.logo || focusedSeries.logo ? (
+                                    /* eslint-disable-next-line @next/next/no-img-element */
+                                    <img src={episode.logo || focusedSeries.logo} alt={episode.name} loading="lazy" />
+                                  ) : null}
+                                </div>
+                                <div className="episode-copy">
+                                  <div className="episode-topline">
+                                    <strong>{String(index + 1).padStart(2, "0")}. {episode.name}</strong>
+                                    <span>{buildEpisodeRuntime(episode)}</span>
+                                  </div>
                                   <small>{getSeriesEpisodeLabel(episode)}</small>
+                                  <p>{buildEpisodeSummary(episode, focusedSeries.title)}</p>
                                 </div>
                               </button>
                             ))
@@ -1871,12 +2653,18 @@ export function IPTVClient() {
                 )}
               </div>
 
-              {!isWideCatalogFocus ? (
+              {!isWideCatalogFocus && !showLiveGuide ? (
               <div className="preview-column">
                 <div className="browser-titlebar">
-                  <strong>Preview</strong>
+                  <strong>{activeTab === "live" ? "Preview ao vivo" : "Preview"}</strong>
                   <span>{selectedChannel ? getItemLabel(selectedChannel) : "Aguardando"}</span>
                 </div>
+
+                {activeTab === "live" && currentPlayerChannel ? (
+                  <div className="card live-preview-player">
+                    <IPTVPlayer channel={currentPlayerChannel} />
+                  </div>
+                ) : null}
 
                 <div className="preview-summary">
                   <article>
@@ -1994,6 +2782,9 @@ export function IPTVClient() {
                           ? `${formatProgramTimeRange(currentProgram)} • ${currentProgram.description || "Programacao ao vivo"}`
                           : selectedChannel?.group || "Sem categoria"}
                       </small>
+                      <div className="live-progress-bar">
+                        <span style={{ width: `${getProgramProgress(currentProgram)}%` }} />
+                      </div>
                     </div>
 
                     <div className="timeline-list">
@@ -2168,6 +2959,7 @@ export function IPTVClient() {
           )}
         </section>
       </section>
+      </div>
     </main>
   );
 }

@@ -7,11 +7,13 @@ import {
   type SettingsRecord
 } from "@/lib/types";
 import { getServerConfig } from "@/lib/config";
+import type { IPTVChannel } from "@/lib/iptv";
 
 const dataRoot = path.join(process.cwd(), "data");
 const conversationsRoot = path.join(dataRoot, "conversations");
 const knowledgeRoot = path.join(dataRoot, "knowledge");
 const knowledgeFilesRoot = path.join(knowledgeRoot, "files");
+const playlistSnapshotsRoot = path.join(dataRoot, "iptv-playlist-snapshots");
 const settingsFile = path.join(dataRoot, "settings.json");
 const knowledgeIndexFile = path.join(knowledgeRoot, "index.json");
 
@@ -28,7 +30,8 @@ async function ensureDataDirs() {
     ensureDir(dataRoot),
     ensureDir(conversationsRoot),
     ensureDir(knowledgeRoot),
-    ensureDir(knowledgeFilesRoot)
+    ensureDir(knowledgeFilesRoot),
+    ensureDir(playlistSnapshotsRoot)
   ]);
 }
 
@@ -44,6 +47,54 @@ async function readJsonFile<T>(filePath: string, fallback: T): Promise<T> {
 async function writeJsonFile(filePath: string, value: unknown) {
   await ensureDataDirs();
   await writeFile(filePath, JSON.stringify(value, null, 2), "utf8");
+}
+
+type CompactPlaylistChannel = [
+  id: string,
+  name: string,
+  group: string,
+  logo: string,
+  tvgId: string,
+  url: string,
+  type: IPTVChannel["type"],
+  catalog: IPTVChannel["catalog"]
+];
+
+type PlaylistSnapshotRecord = {
+  playlistId: string;
+  updatedAt: string;
+  channels: CompactPlaylistChannel[];
+};
+
+function playlistSnapshotFilePath(playlistId: string) {
+  const safeId = playlistId.replace(/[^a-zA-Z0-9_-]/g, "_");
+  return path.join(playlistSnapshotsRoot, `${safeId}.json`);
+}
+
+function compactChannel(channel: IPTVChannel): CompactPlaylistChannel {
+  return [
+    channel.id,
+    channel.name,
+    channel.group,
+    channel.logo || "",
+    channel.tvgId || "",
+    channel.url,
+    channel.type,
+    channel.catalog
+  ];
+}
+
+function expandChannel(channel: CompactPlaylistChannel): IPTVChannel {
+  return {
+    id: channel[0],
+    name: channel[1],
+    group: channel[2],
+    logo: channel[3] || undefined,
+    tvgId: channel[4] || undefined,
+    url: channel[5],
+    type: channel[6],
+    catalog: channel[7]
+  };
 }
 
 export async function getSettings(): Promise<SettingsRecord> {
@@ -278,4 +329,42 @@ export async function getStorageStats() {
     conversations: conversations.length,
     knowledgeBytes: totalKnowledgeBytes
   };
+}
+
+export async function savePlaylistSnapshot(playlistId: string, channels: IPTVChannel[]) {
+  const record: PlaylistSnapshotRecord = {
+    playlistId,
+    updatedAt: isoNow(),
+    channels: channels.map(compactChannel)
+  };
+
+  await writeJsonFile(playlistSnapshotFilePath(playlistId), record);
+  return {
+    playlistId,
+    updatedAt: record.updatedAt,
+    count: channels.length
+  };
+}
+
+export async function getPlaylistSnapshot(playlistId: string) {
+  const snapshot = await readJsonFile<PlaylistSnapshotRecord | null>(
+    playlistSnapshotFilePath(playlistId),
+    null
+  );
+
+  if (!snapshot) {
+    return null;
+  }
+
+  return {
+    playlistId: snapshot.playlistId,
+    updatedAt: snapshot.updatedAt,
+    channels: snapshot.channels.map(expandChannel)
+  };
+}
+
+export async function deletePlaylistSnapshot(playlistId: string) {
+  await ensureDataDirs();
+  await rm(playlistSnapshotFilePath(playlistId), { force: true });
+  return true;
 }
