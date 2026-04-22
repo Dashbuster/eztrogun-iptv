@@ -1,6 +1,6 @@
 "use client";
 
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
 import {
   createEPGIndex,
@@ -53,6 +53,7 @@ const FAVORITES_STORAGE_KEY = "iptv:favorites";
 const RECENT_STORAGE_KEY = "iptv:recent";
 const ACCESS_STORAGE_KEY = "iptv:access-profile";
 const PLAYLISTS_STORAGE_KEY = "iptv:saved-playlists";
+const ACTIVE_PLAYLIST_STORAGE_KEY = "iptv:active-playlist-id";
 const CHANNEL_ROW_HEIGHT = 86;
 const CHANNEL_LIST_HEIGHT = 540;
 const CHANNEL_LIST_OVERSCAN = 8;
@@ -306,6 +307,7 @@ function getCatalogDescription(channel: IPTVChannel | null, epgDescription?: str
 
 export function IPTVClient() {
   const parserWorkerRef = useRef<Worker | null>(null);
+  const restoredPlaylistRef = useRef(false);
   const [favoriteIds, setFavoriteIds] = useState<string[]>(() => readStorage(FAVORITES_STORAGE_KEY, []));
   const [recentIds, setRecentIds] = useState<string[]>(() => readStorage(RECENT_STORAGE_KEY, []));
   const [accessProfile, setAccessProfile] = useState<AccessProfile>(() =>
@@ -325,7 +327,9 @@ export function IPTVClient() {
   const [channels, setChannels] = useState<IPTVChannel[]>([]);
   const [epgIndex, setEpgIndex] = useState<EPGIndex | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [activePlaylistId, setActivePlaylistId] = useState<string | null>(null);
+  const [activePlaylistId, setActivePlaylistId] = useState<string | null>(() =>
+    readStorage<string | null>(ACTIVE_PLAYLIST_STORAGE_KEY, null)
+  );
   const [status, setStatus] = useState("Cadastre uma playlist para começar.");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -357,6 +361,10 @@ export function IPTVClient() {
     }));
     writeStorage(PLAYLISTS_STORAGE_KEY, compactPlaylists);
   }, [savedPlaylists]);
+
+  useEffect(() => {
+    writeStorage(ACTIVE_PLAYLIST_STORAGE_KEY, activePlaylistId);
+  }, [activePlaylistId]);
 
   useEffect(() => {
     return () => {
@@ -575,6 +583,8 @@ export function IPTVClient() {
       : activeSeries.episodes[0]?.id ?? null;
   }, [activeSeries, activeTab, selectedId]);
 
+  const isMovieFocus = activePanel === "catalog" && activeTab === "movie";
+
   const totalVirtualHeight = filteredChannels.length * CHANNEL_ROW_HEIGHT;
   const virtualStartIndex = Math.max(0, Math.floor(listScrollTop / CHANNEL_ROW_HEIGHT) - CHANNEL_LIST_OVERSCAN);
   const virtualVisibleCount =
@@ -583,7 +593,12 @@ export function IPTVClient() {
   const visibleChannels = filteredChannels.slice(virtualStartIndex, virtualEndIndex);
   const topSpacerHeight = virtualStartIndex * CHANNEL_ROW_HEIGHT;
   const bottomSpacerHeight = Math.max(0, totalVirtualHeight - virtualEndIndex * CHANNEL_ROW_HEIGHT);
-  const mediaGridColumns = activeTab === "live" ? gridColumns : Math.max(1, Math.min(gridColumns, 2));
+  const mediaGridColumns =
+    activeTab === "live"
+      ? gridColumns
+      : activeTab === "movie" && isMovieFocus
+        ? Math.max(2, gridColumns)
+        : Math.max(1, Math.min(gridColumns, 2));
   const mediaGridRowCountAdjusted = Math.ceil(filteredChannels.length / mediaGridColumns);
   const mediaGridTotalHeight = mediaGridRowCountAdjusted * MEDIA_GRID_CARD_HEIGHT;
   const mediaGridStartRow = Math.max(0, Math.floor(listScrollTop / MEDIA_GRID_CARD_HEIGHT) - MEDIA_GRID_OVERSCAN);
@@ -901,36 +916,69 @@ export function IPTVClient() {
     }
   }
 
-  function loadSavedPlaylist(playlist: SavedPlaylist) {
-    const openPlaylist = async () => {
-      setLoading(true);
-      setError(null);
+  async function loadSavedPlaylist(playlist: SavedPlaylist, options?: { restoreOnBoot?: boolean }) {
+    setLoading(true);
+    setError(null);
 
-      try {
-        const content = playlist.source === "url" ? await fetchRemoteText(playlist.url) : playlist.content || "";
-        const parsedChannels = await validateAndParsePlaylist(content);
+    try {
+      const content = playlist.source === "url" ? await fetchRemoteText(playlist.url) : playlist.content || "";
+      const parsedChannels = await validateAndParsePlaylist(content);
 
-        if (playlist.epgUrl) {
-          await loadEPG(playlist.epgUrl);
-        } else {
-          setEpgIndex(null);
-        }
-
-        setPlaylistInput(playlist.source === "text" ? content : "");
-        setPlaylistUrl(playlist.url);
-        setPlaylistEpgUrl(playlist.epgUrl || "");
-        setPlaylistName(playlist.name);
-        setEditingPlaylistId(null);
-        applyLoadedChannels(parsedChannels, `Playlist ${playlist.name} carregada.`, playlist.id);
-      } catch (caughtError) {
-        setError(caughtError instanceof Error ? caughtError.message : "Falha ao abrir a playlist.");
-      } finally {
-        setLoading(false);
+      if (playlist.epgUrl) {
+        await loadEPG(playlist.epgUrl);
+      } else {
+        setEpgIndex(null);
       }
-    };
 
-    void openPlaylist();
+      setPlaylistInput(playlist.source === "text" ? content : "");
+      setPlaylistUrl(playlist.url);
+      setPlaylistEpgUrl(playlist.epgUrl || "");
+      setPlaylistName(playlist.name);
+      setEditingPlaylistId(null);
+      applyLoadedChannels(
+        parsedChannels,
+        options?.restoreOnBoot ? `Playlist ${playlist.name} restaurada automaticamente.` : `Playlist ${playlist.name} carregada.`,
+        playlist.id
+      );
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Falha ao abrir a playlist.");
+    } finally {
+      setLoading(false);
+    }
   }
+
+  function openSavedPlaylist(playlist: SavedPlaylist) {
+    void loadSavedPlaylist(playlist);
+  }
+
+  const restorePlaylistOnBoot = useEffectEvent((playlist: SavedPlaylist) => {
+    void loadSavedPlaylist(playlist, { restoreOnBoot: true });
+  });
+
+  useEffect(() => {
+    if (restoredPlaylistRef.current) {
+      return;
+    }
+
+    restoredPlaylistRef.current = true;
+
+    if (!savedPlaylists.length || !activePlaylistId) {
+      return;
+    }
+
+    const playlistToRestore = savedPlaylists.find((playlist) => playlist.id === activePlaylistId);
+
+    if (!playlistToRestore) {
+      writeStorage(ACTIVE_PLAYLIST_STORAGE_KEY, null);
+      return;
+    }
+
+    const restoreTimer = window.setTimeout(() => {
+      restorePlaylistOnBoot(playlistToRestore);
+    }, 0);
+
+    return () => window.clearTimeout(restoreTimer);
+  }, [activePlaylistId, savedPlaylists]);
 
   function deletePlaylist(playlistId: string) {
     const playlistToRemove = savedPlaylists.find((playlist) => playlist.id === playlistId);
@@ -1061,7 +1109,7 @@ export function IPTVClient() {
           type="button"
           className="home-reload"
           disabled={!activePlaylist}
-          onClick={() => activePlaylist && loadSavedPlaylist(activePlaylist)}
+          onClick={() => activePlaylist && openSavedPlaylist(activePlaylist)}
         >
           <span>Reload</span>
           <strong>{activePlaylist ? activePlaylist.name : "Nenhuma playlist ativa"}</strong>
@@ -1073,7 +1121,8 @@ export function IPTVClient() {
         </div>
       </section>
 
-      <section className="iptv-layout">
+      <section className={`iptv-layout ${isMovieFocus ? "catalog-focus-layout" : ""}`}>
+        {!isMovieFocus ? (
         <aside className="iptv-sidebar card">
           <div className="panel-heading">
             <h2>{getPanelTitle(activePanel)}</h2>
@@ -1203,7 +1252,7 @@ export function IPTVClient() {
                     </span>
                   </div>
                   <div className="saved-actions">
-                    <button type="button" className="mini-action" onClick={() => loadSavedPlaylist(playlist)}>
+                    <button type="button" className="mini-action" onClick={() => openSavedPlaylist(playlist)}>
                       Abrir
                     </button>
                     <button type="button" className="mini-action ghost-button" onClick={() => fillPlaylistForm(playlist)}>
@@ -1274,8 +1323,9 @@ export function IPTVClient() {
             </div>
           ) : null}
         </aside>
+        ) : null}
 
-        <section className="iptv-main">
+        <section className={`iptv-main ${isMovieFocus ? "catalog-focus-main" : ""}`}>
           {activePanel === "catalog" ? (
           <>
           <div className="card catalog-card">
@@ -1301,6 +1351,7 @@ export function IPTVClient() {
             </div>
           ) : null}
 
+          {!isMovieFocus ? (
           <div className="card insights-card">
             <div className="channels-header">
               <div>
@@ -1337,6 +1388,7 @@ export function IPTVClient() {
               </button>
             </div>
           </div>
+          ) : null}
 
           <div className="card channels-card">
             <div className="channels-header">
@@ -1363,7 +1415,7 @@ export function IPTVClient() {
               </div>
             </div>
 
-            <div className="browser-layout">
+            <div className={`browser-layout ${isMovieFocus ? "browser-layout-movie" : ""}`}>
               <div className="category-column">
                 <div className="browser-titlebar">
                   <strong>Categorias</strong>
@@ -1541,6 +1593,7 @@ export function IPTVClient() {
                 )}
               </div>
 
+              {!isMovieFocus ? (
               <div className="preview-column">
                 <div className="browser-titlebar">
                   <strong>Preview</strong>
@@ -1721,6 +1774,7 @@ export function IPTVClient() {
                     ))}
                 </div>
               </div>
+              ) : null}
             </div>
 
             <div className="channel-list legacy-hidden" onScroll={(event) => setListScrollTop(event.currentTarget.scrollTop)}>
