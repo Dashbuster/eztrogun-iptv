@@ -373,6 +373,8 @@ export function IPTVClient() {
   const [activeTab, setActiveTab] = useState<CatalogTab>("live");
   const [activePanel, setActivePanel] = useState<HomePanel>("none");
   const [activeSeriesKey, setActiveSeriesKey] = useState<string | null>(null);
+  const [activeSeasonNumber, setActiveSeasonNumber] = useState<number | null>(null);
+  const [playingId, setPlayingId] = useState<string | null>(null);
   const [listScrollTop, setListScrollTop] = useState(0);
   const [gridColumns, setGridColumns] = useState(3);
 
@@ -615,7 +617,31 @@ export function IPTVClient() {
     return activeSeries.episodes.some((episode) => episode.id === selectedId) ? selectedId : null;
   }, [activeSeries, activeTab, selectedId]);
 
-  const isMovieFocus = activePanel === "catalog" && activeTab === "movie";
+  const selectedChannel = resolvedSelectedId ? catalogIndex.byId.get(resolvedSelectedId) || null : null;
+  const playingChannel = playingId ? catalogIndex.byId.get(playingId) || null : null;
+
+  const focusedSeason = useMemo(() => {
+    if (!activeSeries) {
+      return null;
+    }
+
+    const selectedEpisodeSeason =
+      selectedChannel?.catalog === "series"
+        ? activeSeries.seasons.find((season) => season.episodes.some((episode) => episode.id === selectedChannel.id))
+        : null;
+
+    if (selectedEpisodeSeason) {
+      return selectedEpisodeSeason;
+    }
+
+    if (activeSeasonNumber !== null) {
+      return activeSeries.seasons.find((season) => season.seasonNumber === activeSeasonNumber) || activeSeries.seasons[0];
+    }
+
+    return activeSeries.seasons[0] || null;
+  }, [activeSeasonNumber, activeSeries, selectedChannel]);
+
+  const isWideCatalogFocus = activePanel === "catalog" && (activeTab === "movie" || activeTab === "series");
 
   const totalVirtualHeight = filteredChannels.length * CHANNEL_ROW_HEIGHT;
   const virtualStartIndex = Math.max(0, Math.floor(listScrollTop / CHANNEL_ROW_HEIGHT) - CHANNEL_LIST_OVERSCAN);
@@ -628,7 +654,7 @@ export function IPTVClient() {
   const mediaGridColumns =
     activeTab === "live"
       ? gridColumns
-      : activeTab === "movie" && isMovieFocus
+      : (activeTab === "movie" || activeTab === "series") && isWideCatalogFocus
         ? Math.max(2, gridColumns)
         : Math.max(1, Math.min(gridColumns, 2));
   const mediaGridRowCountAdjusted = Math.ceil(filteredChannels.length / mediaGridColumns);
@@ -644,8 +670,6 @@ export function IPTVClient() {
   const mediaGridTopSpacerHeight = mediaGridStartRow * MEDIA_GRID_CARD_HEIGHT;
   const mediaGridBottomSpacerHeight = Math.max(0, mediaGridTotalHeight - mediaGridEndRow * MEDIA_GRID_CARD_HEIGHT);
   const itemBrowserCount = activeTab === "series" ? seriesEntries.length : filteredChannels.length;
-
-  const selectedChannel = resolvedSelectedId ? catalogIndex.byId.get(resolvedSelectedId) || null : null;
 
   const activePlaylist = useMemo(() => {
     return savedPlaylists.find((playlist) => playlist.id === activePlaylistId) || null;
@@ -689,6 +713,10 @@ export function IPTVClient() {
   const selectedDescription = useMemo(() => {
     return getCatalogDescription(selectedChannel, currentProgram?.description);
   }, [currentProgram?.description, selectedChannel]);
+  const focusedMovie = activeTab === "movie" ? selectedChannel : null;
+  const focusedSeries = activeTab === "series" ? activeSeries : null;
+  const isFocusedMediaDetail = Boolean(focusedMovie || focusedSeries);
+  const currentPlayerChannel = activeTab === "live" ? selectedChannel : playingChannel;
 
   function rememberRecentChannel(channel: IPTVChannel | null) {
     if (!channel) {
@@ -710,6 +738,15 @@ export function IPTVClient() {
 
     if (channel?.catalog === "series") {
       setActiveSeriesKey(getSeriesKey(channel));
+      const matchedSeason = seriesEntries
+        .find((entry) => entry.key === getSeriesKey(channel))
+        ?.seasons.find((season) => season.episodes.some((episode) => episode.id === channel.id));
+      setActiveSeasonNumber(matchedSeason?.seasonNumber ?? null);
+      setPlayingId(null);
+    } else if (channel?.catalog === "live") {
+      setPlayingId(channel.id);
+    } else {
+      setPlayingId(null);
     }
 
     rememberRecentChannel(channel);
@@ -745,6 +782,9 @@ export function IPTVClient() {
     setActivePlaylistId(playlistId ?? null);
     setActivePanel("catalog");
     setSelectedId(null);
+    setActiveSeriesKey(null);
+    setActiveSeasonNumber(null);
+    setPlayingId(null);
   }
 
   function cacheLoadedPlaylist(playlistId: string, nextChannels: IPTVChannel[]) {
@@ -770,6 +810,30 @@ export function IPTVClient() {
     setListScrollTop(0);
     setSelectedId(null);
     setActiveSeriesKey(null);
+    setActiveSeasonNumber(null);
+    setPlayingId(null);
+  }
+
+  function openMoviePlayback() {
+    if (selectedChannel?.catalog === "movie") {
+      setPlayingId(selectedChannel.id);
+    }
+  }
+
+  function openSeriesPlayback() {
+    if (selectedChannel?.catalog === "series") {
+      setPlayingId(selectedChannel.id);
+    }
+  }
+
+  function closeFocusedCatalogView() {
+    setSelectedId(null);
+    setPlayingId(null);
+
+    if (activeTab === "series") {
+      setActiveSeriesKey(null);
+      setActiveSeasonNumber(null);
+    }
   }
 
   function toggleFavorite(channel: IPTVChannel) {
@@ -1189,8 +1253,8 @@ export function IPTVClient() {
         </div>
       </section>
 
-      <section className={`iptv-layout ${isMovieFocus ? "catalog-focus-layout" : ""}`}>
-        {!isMovieFocus ? (
+      <section className={`iptv-layout ${isWideCatalogFocus ? "catalog-focus-layout" : ""}`}>
+        {!isWideCatalogFocus ? (
         <aside className="iptv-sidebar card">
           <div className="panel-heading">
             <h2>{getPanelTitle(activePanel)}</h2>
@@ -1393,7 +1457,7 @@ export function IPTVClient() {
         </aside>
         ) : null}
 
-        <section className={`iptv-main ${isMovieFocus ? "catalog-focus-main" : ""}`}>
+        <section className={`iptv-main ${isWideCatalogFocus ? "catalog-focus-main" : ""}`}>
           {activePanel === "catalog" ? (
           <>
           <div className="card catalog-card">
@@ -1413,13 +1477,13 @@ export function IPTVClient() {
             </div>
           </div>
 
-          {selectedChannel ? (
+          {currentPlayerChannel ? (
             <div className="card player-card">
-              <IPTVPlayer channel={selectedChannel} />
+              <IPTVPlayer channel={currentPlayerChannel} />
             </div>
           ) : null}
 
-          {!isMovieFocus ? (
+          {!isWideCatalogFocus ? (
           <div className="card insights-card">
             <div className="channels-header">
               <div>
@@ -1483,7 +1547,12 @@ export function IPTVClient() {
               </div>
             </div>
 
-            <div className={`browser-layout ${isMovieFocus ? "browser-layout-movie" : ""}`}>
+            <div
+              className={`browser-layout ${isWideCatalogFocus ? "browser-layout-movie" : ""} ${
+                isFocusedMediaDetail ? "browser-layout-detail" : ""
+              }`}
+            >
+              {!isFocusedMediaDetail ? (
               <div className="category-column">
                 <div className="browser-titlebar">
                   <strong>Categorias</strong>
@@ -1507,6 +1576,7 @@ export function IPTVClient() {
                   ))}
                 </div>
               </div>
+              ) : null}
 
               <div className="items-column">
                 <div className="browser-titlebar">
@@ -1573,6 +1643,112 @@ export function IPTVClient() {
                       <span>Troque de categoria ou refine a busca.</span>
                     </div>
                   ) : null}
+                  </div>
+                ) : activeTab === "movie" && focusedMovie ? (
+                  <div className="focused-media-screen">
+                    <button type="button" className="ghost-button focused-back" onClick={closeFocusedCatalogView}>
+                      Voltar para filmes
+                    </button>
+                    <div className={`focused-media-poster ${focusedMovie.logo ? "has-image" : ""}`}>
+                      {focusedMovie.logo ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img src={focusedMovie.logo} alt={focusedMovie.name} loading="lazy" />
+                      ) : null}
+                      <div className="focused-media-overlay">
+                        <span>Filme</span>
+                        <strong>{focusedMovie.name}</strong>
+                        <small>{focusedMovie.group || "Sem categoria"}</small>
+                        <div className="focused-media-actions">
+                          <button type="button" onClick={openMoviePlayback}>
+                            Play
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : activeTab === "series" && focusedSeries ? (
+                  <div className="focused-media-screen focused-series-screen">
+                    <button type="button" className="ghost-button focused-back" onClick={closeFocusedCatalogView}>
+                      Voltar para series
+                    </button>
+                    <div className={`focused-media-poster ${focusedSeries.logo ? "has-image" : ""}`}>
+                      {focusedSeries.logo ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img src={focusedSeries.logo} alt={focusedSeries.title} loading="lazy" />
+                      ) : null}
+                      <div className="focused-media-overlay">
+                        <span>Serie</span>
+                        <strong>{focusedSeries.title}</strong>
+                        <small>{focusedSeries.group || "Sem categoria"}</small>
+                        <div className="focused-media-metrics">
+                          <span>{focusedSeries.seasons.length} temporadas</span>
+                          <span>{focusedSeries.episodes.length} episodios</span>
+                        </div>
+                        {selectedChannel ? (
+                          <div className="focused-media-actions">
+                            <button type="button" onClick={openSeriesPlayback}>
+                              Play episodio
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <div className="series-detail-layout">
+                      <div className="epg-panel">
+                        <div className="browser-titlebar">
+                          <strong>Temporadas</strong>
+                          <span>{focusedSeries.seasons.length}</span>
+                        </div>
+                        <div className="season-chip-row season-chip-grid">
+                          {focusedSeries.seasons.map((season) => (
+                            <button
+                              key={season.label}
+                              type="button"
+                              className={`season-chip ${focusedSeason?.label === season.label ? "active" : ""}`}
+                              onClick={() => {
+                                setActiveSeasonNumber(season.seasonNumber);
+                                setSelectedId(null);
+                                setPlayingId(null);
+                              }}
+                            >
+                              <strong>{season.label}</strong>
+                              <span>{season.episodes.length} eps</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="epg-panel">
+                        <div className="browser-titlebar">
+                          <strong>{focusedSeason?.label || "Episodios"}</strong>
+                          <span>{focusedSeason?.episodes.length || 0}</span>
+                        </div>
+                        <div className="timeline-list">
+                          {focusedSeason ? (
+                            focusedSeason.episodes.map((episode) => (
+                              <button
+                                key={episode.id}
+                                type="button"
+                                className={`timeline-item ${episode.id === selectedChannel?.id ? "active" : ""}`}
+                                onClick={() => selectChannel(episode)}
+                              >
+                                <span className="timeline-dot" />
+                                <div>
+                                  <strong>{episode.name}</strong>
+                                  <small>{getSeriesEpisodeLabel(episode)}</small>
+                                </div>
+                              </button>
+                            ))
+                          ) : (
+                            <div className="empty-state">
+                              <strong>Nenhuma temporada encontrada.</strong>
+                              <span>Escolha outra serie para continuar.</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 ) : activeTab === "series" ? (
                   <div className="media-grid-shell">
@@ -1661,7 +1837,7 @@ export function IPTVClient() {
                 )}
               </div>
 
-              {!isMovieFocus ? (
+              {!isWideCatalogFocus ? (
               <div className="preview-column">
                 <div className="browser-titlebar">
                   <strong>Preview</strong>
