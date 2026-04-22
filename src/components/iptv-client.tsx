@@ -48,12 +48,18 @@ type SeriesEntry = {
   episodes: IndexedChannel[];
   seasons: SeriesSeason[];
 };
+type CachedPlaylistPayload = {
+  playlistId: string;
+  cachedAt: string;
+  channels: IPTVChannel[];
+};
 
 const FAVORITES_STORAGE_KEY = "iptv:favorites";
 const RECENT_STORAGE_KEY = "iptv:recent";
 const ACCESS_STORAGE_KEY = "iptv:access-profile";
 const PLAYLISTS_STORAGE_KEY = "iptv:saved-playlists";
 const ACTIVE_PLAYLIST_STORAGE_KEY = "iptv:active-playlist-id";
+const PLAYLIST_CACHE_STORAGE_PREFIX = "iptv:playlist-cache:";
 const CHANNEL_ROW_HEIGHT = 86;
 const CHANNEL_LIST_HEIGHT = 540;
 const CHANNEL_LIST_OVERSCAN = 8;
@@ -235,6 +241,34 @@ function writeStorage(key: string, value: unknown) {
   } catch (error) {
     return { ok: false as const, error };
   }
+}
+
+function removeStorage(key: string) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // Ignore storage cleanup failures.
+  }
+}
+
+function getPlaylistCacheStorageKey(playlistId: string) {
+  return `${PLAYLIST_CACHE_STORAGE_PREFIX}${playlistId}`;
+}
+
+function readPlaylistCache(playlistId: string) {
+  return readStorage<CachedPlaylistPayload | null>(getPlaylistCacheStorageKey(playlistId), null);
+}
+
+function writePlaylistCache(playlistId: string, channels: IPTVChannel[]) {
+  return writeStorage(getPlaylistCacheStorageKey(playlistId), {
+    playlistId,
+    cachedAt: new Date().toISOString(),
+    channels
+  });
 }
 
 function getEmptyAccessProfile(): AccessProfile {
@@ -574,13 +608,11 @@ export function IPTVClient() {
       return selectedId;
     }
 
-    if (!activeSeries) {
+    if (!activeSeries || !selectedId) {
       return null;
     }
 
-    return activeSeries.episodes.some((episode) => episode.id === selectedId)
-      ? selectedId
-      : activeSeries.episodes[0]?.id ?? null;
+    return activeSeries.episodes.some((episode) => episode.id === selectedId) ? selectedId : null;
   }, [activeSeries, activeTab, selectedId]);
 
   const isMovieFocus = activePanel === "catalog" && activeTab === "movie";
@@ -691,6 +723,14 @@ export function IPTVClient() {
     return nextChannels[0]?.catalog || "live";
   }
 
+  function hydratePlaylistFields(playlist: SavedPlaylist, content?: string) {
+    setPlaylistInput(playlist.source === "text" ? content || playlist.content || "" : "");
+    setPlaylistUrl(playlist.url);
+    setPlaylistEpgUrl(playlist.epgUrl || "");
+    setPlaylistName(playlist.name);
+    setEditingPlaylistId(null);
+  }
+
   function applyLoadedChannels(nextChannels: IPTVChannel[], nextStatus: string, playlistId?: string | null) {
     const preferredTab = chooseInitialTab(nextChannels);
     const preferredGroup = getPreferredGroup(nextChannels, preferredTab);
@@ -705,6 +745,11 @@ export function IPTVClient() {
     setActivePlaylistId(playlistId ?? null);
     setActivePanel("catalog");
     setSelectedId(null);
+  }
+
+  function cacheLoadedPlaylist(playlistId: string, nextChannels: IPTVChannel[]) {
+    const cacheResult = writePlaylistCache(playlistId, nextChannels);
+    return cacheResult.ok;
   }
 
   function saveAccessProfile() {
@@ -881,6 +926,8 @@ export function IPTVClient() {
         throw new Error("A playlist e grande demais para ficar salva no navegador. Use URL ou reduza o conteudo colado.");
       }
 
+      cacheLoadedPlaylist(playlistRecord.id, parsedChannels);
+
       setSavedPlaylists((current) => {
         if (editingPlaylistId) {
           return current.map((playlist) => (playlist.id === editingPlaylistId ? playlistRecord : playlist));
@@ -916,11 +963,34 @@ export function IPTVClient() {
     }
   }
 
-  async function loadSavedPlaylist(playlist: SavedPlaylist, options?: { restoreOnBoot?: boolean }) {
+  async function loadSavedPlaylist(playlist: SavedPlaylist, options?: { restoreOnBoot?: boolean; preferCache?: boolean }) {
     setLoading(true);
     setError(null);
 
     try {
+      const cachedPlaylist = options?.preferCache ? readPlaylistCache(playlist.id) : null;
+
+      if (cachedPlaylist?.channels.length) {
+        hydratePlaylistFields(playlist, playlist.content);
+        applyLoadedChannels(
+          cachedPlaylist.channels,
+          options?.restoreOnBoot
+            ? `Playlist ${playlist.name} restaurada automaticamente.`
+            : `Playlist ${playlist.name} aberta do cache local.`,
+          playlist.id
+        );
+
+        if (playlist.epgUrl) {
+          void loadEPG(playlist.epgUrl).catch(() => {
+            setEpgIndex(null);
+          });
+        } else {
+          setEpgIndex(null);
+        }
+
+        return;
+      }
+
       const content = playlist.source === "url" ? await fetchRemoteText(playlist.url) : playlist.content || "";
       const parsedChannels = await validateAndParsePlaylist(content);
 
@@ -930,11 +1000,8 @@ export function IPTVClient() {
         setEpgIndex(null);
       }
 
-      setPlaylistInput(playlist.source === "text" ? content : "");
-      setPlaylistUrl(playlist.url);
-      setPlaylistEpgUrl(playlist.epgUrl || "");
-      setPlaylistName(playlist.name);
-      setEditingPlaylistId(null);
+      cacheLoadedPlaylist(playlist.id, parsedChannels);
+      hydratePlaylistFields(playlist, content);
       applyLoadedChannels(
         parsedChannels,
         options?.restoreOnBoot ? `Playlist ${playlist.name} restaurada automaticamente.` : `Playlist ${playlist.name} carregada.`,
@@ -948,11 +1015,11 @@ export function IPTVClient() {
   }
 
   function openSavedPlaylist(playlist: SavedPlaylist) {
-    void loadSavedPlaylist(playlist);
+    void loadSavedPlaylist(playlist, { preferCache: true });
   }
 
   const restorePlaylistOnBoot = useEffectEvent((playlist: SavedPlaylist) => {
-    void loadSavedPlaylist(playlist, { restoreOnBoot: true });
+    void loadSavedPlaylist(playlist, { restoreOnBoot: true, preferCache: true });
   });
 
   useEffect(() => {
@@ -969,7 +1036,7 @@ export function IPTVClient() {
     const playlistToRestore = savedPlaylists.find((playlist) => playlist.id === activePlaylistId);
 
     if (!playlistToRestore) {
-      writeStorage(ACTIVE_PLAYLIST_STORAGE_KEY, null);
+      removeStorage(ACTIVE_PLAYLIST_STORAGE_KEY);
       return;
     }
 
@@ -984,6 +1051,7 @@ export function IPTVClient() {
     const playlistToRemove = savedPlaylists.find((playlist) => playlist.id === playlistId);
 
     setSavedPlaylists((current) => current.filter((playlist) => playlist.id !== playlistId));
+    removeStorage(getPlaylistCacheStorageKey(playlistId));
 
     if (activePlaylistId === playlistId) {
       setActivePlaylistId(null);
@@ -1521,7 +1589,7 @@ export function IPTVClient() {
                           }`}
                           onClick={() => {
                             setActiveSeriesKey(entry.key);
-                            setSelectedId(entry.episodes[0]?.id ?? null);
+                            setSelectedId(null);
                           }}
                         >
                           <div className="media-card-poster">
