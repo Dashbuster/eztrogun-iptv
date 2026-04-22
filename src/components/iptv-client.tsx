@@ -59,6 +59,71 @@ const CHANNEL_LIST_OVERSCAN = 8;
 const MEDIA_GRID_CARD_HEIGHT = 468;
 const MEDIA_GRID_OVERSCAN = 2;
 
+function LaunchIcon({ kind }: { kind: "live" | "movie" | "series" | "playlists" | "settings" }) {
+  if (kind === "live") {
+    return (
+      <svg viewBox="0 0 48 48" aria-hidden="true">
+        <rect x="9" y="11" width="30" height="20" rx="5" />
+        <path d="M18 37h12" />
+        <path d="M24 31v6" />
+        <path d="M16 7l8 7 8-7" />
+        <path d="M14 20h20" />
+      </svg>
+    );
+  }
+
+  if (kind === "movie") {
+    return (
+      <svg viewBox="0 0 48 48" aria-hidden="true">
+        <rect x="11" y="12" width="26" height="24" rx="4" />
+        <path d="M17 12l4 6" />
+        <path d="M27 12l4 6" />
+        <path d="M11 20h26" />
+        <path d="M20 24l10 4-10 4z" />
+      </svg>
+    );
+  }
+
+  if (kind === "series") {
+    return (
+      <svg viewBox="0 0 48 48" aria-hidden="true">
+        <rect x="10" y="10" width="28" height="28" rx="6" />
+        <path d="M19 18h10" />
+        <path d="M19 24h10" />
+        <path d="M19 30h6" />
+        <circle cx="14.5" cy="18" r="1.5" fill="currentColor" stroke="none" />
+        <circle cx="14.5" cy="24" r="1.5" fill="currentColor" stroke="none" />
+        <circle cx="14.5" cy="30" r="1.5" fill="currentColor" stroke="none" />
+      </svg>
+    );
+  }
+
+  if (kind === "playlists") {
+    return (
+      <svg viewBox="0 0 48 48" aria-hidden="true">
+        <rect x="10" y="10" width="28" height="28" rx="6" />
+        <path d="M17 18h14" />
+        <path d="M17 24h14" />
+        <path d="M17 30h9" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 48 48" aria-hidden="true">
+      <circle cx="24" cy="24" r="9" />
+      <path d="M24 10v4" />
+      <path d="M24 34v4" />
+      <path d="M10 24h4" />
+      <path d="M34 24h4" />
+      <path d="M14.5 14.5l2.8 2.8" />
+      <path d="M30.7 30.7l2.8 2.8" />
+      <path d="M33.5 14.5l-2.8 2.8" />
+      <path d="M17.3 30.7l-2.8 2.8" />
+    </svg>
+  );
+}
+
 function normalizeSearchValue(value: string) {
   return value
     .normalize("NFD")
@@ -425,7 +490,7 @@ export function IPTVClient() {
     });
   }, [activeGroup, deferredQuery, tabChannels]);
 
-  const seriesEntries = useMemo(() => {
+  const seriesEntries = useMemo<SeriesEntry[]>(() => {
     const seriesMap = new Map<
       string,
       {
@@ -489,8 +554,26 @@ export function IPTVClient() {
   }, [filteredChannels]);
 
   const activeSeries = useMemo(() => {
-    return seriesEntries.find((entry) => entry.key === activeSeriesKey) || null;
-  }, [activeSeriesKey, seriesEntries]);
+    if (activeTab !== "series" || seriesEntries.length === 0) {
+      return null;
+    }
+
+    return seriesEntries.find((entry) => entry.key === activeSeriesKey) || seriesEntries[0];
+  }, [activeSeriesKey, activeTab, seriesEntries]);
+
+  const resolvedSelectedId = useMemo(() => {
+    if (activeTab !== "series") {
+      return selectedId;
+    }
+
+    if (!activeSeries) {
+      return null;
+    }
+
+    return activeSeries.episodes.some((episode) => episode.id === selectedId)
+      ? selectedId
+      : activeSeries.episodes[0]?.id ?? null;
+  }, [activeSeries, activeTab, selectedId]);
 
   const totalVirtualHeight = filteredChannels.length * CHANNEL_ROW_HEIGHT;
   const virtualStartIndex = Math.max(0, Math.floor(listScrollTop / CHANNEL_ROW_HEIGHT) - CHANNEL_LIST_OVERSCAN);
@@ -513,7 +596,7 @@ export function IPTVClient() {
   const mediaGridTopSpacerHeight = mediaGridStartRow * MEDIA_GRID_CARD_HEIGHT;
   const mediaGridBottomSpacerHeight = Math.max(0, mediaGridTotalHeight - mediaGridEndRow * MEDIA_GRID_CARD_HEIGHT);
 
-  const selectedChannel = selectedId ? catalogIndex.byId.get(selectedId) || null : null;
+  const selectedChannel = resolvedSelectedId ? catalogIndex.byId.get(resolvedSelectedId) || null : null;
 
   const activePlaylist = useMemo(() => {
     return savedPlaylists.find((playlist) => playlist.id === activePlaylistId) || null;
@@ -557,29 +640,6 @@ export function IPTVClient() {
   const selectedDescription = useMemo(() => {
     return getCatalogDescription(selectedChannel, currentProgram?.description);
   }, [currentProgram?.description, selectedChannel]);
-
-  useEffect(() => {
-    if (activeTab !== "series") {
-      setActiveSeriesKey(null);
-      return;
-    }
-
-    if (!seriesEntries.length) {
-      setActiveSeriesKey(null);
-      setSelectedId(null);
-      return;
-    }
-
-    const nextSeries = seriesEntries.find((entry) => entry.key === activeSeriesKey) || seriesEntries[0];
-
-    if (nextSeries.key !== activeSeriesKey) {
-      setActiveSeriesKey(nextSeries.key);
-    }
-
-    if (!nextSeries.episodes.some((episode) => episode.id === selectedId)) {
-      setSelectedId(nextSeries.episodes[0]?.id ?? null);
-    }
-  }, [activeSeriesKey, activeTab, selectedId, seriesEntries]);
 
   function rememberRecentChannel(channel: IPTVChannel | null) {
     if (!channel) {
@@ -943,7 +1003,9 @@ export function IPTVClient() {
             className={`launch-card ${activePanel === "catalog" && activeTab === "live" ? "active" : ""}`}
             onClick={() => openCatalogPanel("live")}
           >
-            <span className="launch-icon">TV</span>
+            <span className="launch-icon">
+              <LaunchIcon kind="live" />
+            </span>
             <strong>Live TV</strong>
             <span>{catalogCounts.live} itens</span>
           </button>
@@ -952,7 +1014,9 @@ export function IPTVClient() {
             className={`launch-card ${activePanel === "catalog" && activeTab === "movie" ? "active" : ""}`}
             onClick={() => openCatalogPanel("movie")}
           >
-            <span className="launch-icon">MV</span>
+            <span className="launch-icon">
+              <LaunchIcon kind="movie" />
+            </span>
             <strong>Movies</strong>
             <span>{catalogCounts.movie} itens</span>
           </button>
@@ -961,7 +1025,9 @@ export function IPTVClient() {
             className={`launch-card ${activePanel === "catalog" && activeTab === "series" ? "active" : ""}`}
             onClick={() => openCatalogPanel("series")}
           >
-            <span className="launch-icon">SR</span>
+            <span className="launch-icon">
+              <LaunchIcon kind="series" />
+            </span>
             <strong>Series</strong>
             <span>{catalogCounts.series} itens</span>
           </button>
@@ -970,7 +1036,9 @@ export function IPTVClient() {
             className={`launch-card ${activePanel === "playlists" ? "active" : ""}`}
             onClick={() => openPanel("playlists")}
           >
-            <span className="launch-icon">PL</span>
+            <span className="launch-icon">
+              <LaunchIcon kind="playlists" />
+            </span>
             <strong>Playlists</strong>
             <span>{savedPlaylists.length} salvas</span>
           </button>
@@ -979,7 +1047,9 @@ export function IPTVClient() {
             className={`launch-card ${activePanel === "settings" ? "active" : ""}`}
             onClick={() => openPanel("settings")}
           >
-            <span className="launch-icon">ST</span>
+            <span className="launch-icon">
+              <LaunchIcon kind="settings" />
+            </span>
             <strong>Settings</strong>
             <span>Acesso local</span>
           </button>
@@ -1335,6 +1405,8 @@ export function IPTVClient() {
                       <div className="channel-copy">
                         {channel.logo ? (
                           <span className={`media-thumb ${activeTab === "live" ? "live-thumb" : ""}`}>
+                            {/* Arbitrary playlist logos come from unknown remote domains. */}
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img src={channel.logo} alt={channel.name} loading="lazy" />
                           </span>
                         ) : null}
@@ -1398,6 +1470,7 @@ export function IPTVClient() {
                         >
                           <div className="media-card-poster">
                             {entry.logo ? (
+                              /* eslint-disable-next-line @next/next/no-img-element */
                               <img src={entry.logo} alt={entry.title} loading="lazy" />
                             ) : (
                               <span className="media-card-fallback">Serie</span>
@@ -1436,6 +1509,7 @@ export function IPTVClient() {
                         >
                           <div className="media-card-poster">
                             {channel.logo ? (
+                              /* eslint-disable-next-line @next/next/no-img-element */
                               <img src={channel.logo} alt={channel.name} loading="lazy" />
                             ) : (
                               <span className="media-card-fallback">{getItemLabel(channel)}</span>
@@ -1494,8 +1568,10 @@ export function IPTVClient() {
                   }`}
                 >
                   {activeTab === "series" ? activeSeries?.logo ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
                     <img src={activeSeries.logo} alt={activeSeries.title} loading="lazy" />
                   ) : null : selectedChannel?.logo ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
                     <img src={selectedChannel.logo} alt={selectedChannel.name} loading="lazy" />
                   ) : null}
                   <div className="preview-overlay">

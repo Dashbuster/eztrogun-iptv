@@ -159,17 +159,26 @@ button {
 }
 
 .launch-icon {
-  width: 42px;
-  height: 42px;
+  width: 48px;
+  height: 48px;
   display: grid;
   place-items: center;
-  border-radius: 14px;
+  border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(27, 8, 45, 0.56);
+  background:
+    radial-gradient(circle at top, rgba(255, 211, 111, 0.18), transparent 62%),
+    rgba(27, 8, 45, 0.56);
   color: #ffd36f;
-  font-size: 0.8rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
+}
+
+.launch-icon svg {
+  width: 28px;
+  height: 28px;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
 }
 
 .launch-card strong {

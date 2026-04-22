@@ -1,16 +1,19 @@
 # Eztrogun IPTV
 
-Player web feito com Next.js para importar playlists M3U, navegar por grupos, filtrar canais e reproduzir streams IPTV no navegador.
+Player web feito com Next.js para importar playlists M3U, salvar acessos, navegar por catalogo e reproduzir streams IPTV no navegador.
 
 ## Recursos atuais
 
-- Importacao de playlist por URL remota
-- Leitura manual de conteudo M3U colado
+- Multiplas playlists salvas no navegador
+- Importacao de playlist por URL remota ou conteudo M3U colado
+- Suporte opcional a EPG/XMLTV via URL
+- Catalogo separado em canais, filmes e series
+- Navegacao por grupos, busca textual e browser de series por temporadas
 - Player HTML5 com suporte a HLS via `hls.js`
-- Busca por nome e categoria
 - Favoritos persistidos no navegador
-- Historico recente de canais acessados
+- Historico recente de itens acessados
 - Exportacao da lista filtrada e dos favoritos em `.m3u`
+- Perfil de acesso salvo localmente no navegador
 
 ## Stack
 
@@ -32,9 +35,11 @@ Player web feito com Next.js para importar playlists M3U, navegar por grupos, fi
 - `src/components/iptv-client.tsx`: interface principal do player
 - `src/components/iptv-player.tsx`: reproducao do canal selecionado
 - `src/lib/iptv.ts`: parser M3U e utilitarios de exportacao
+- `src/lib/epg.ts`: parser XMLTV e indexacao de grade
 - `src/app/api/playlist/route.ts`: proxy para carregar playlist remota
 
 ## Observacoes
 
-- Algumas rotas e arquivos administrativos ainda existem porque o projeto foi reaproveitado de uma base anterior.
+- Ainda existem rotas e arquivos administrativos herdados de uma base anterior que nao fazem parte do fluxo principal do player.
 - O player depende de o provedor permitir acesso ao stream e a playlist sem bloqueios de autenticacao ou CORS.
+- Logos, posters e streams podem vir de dominios arbitrarios definidos pela propria playlist.
