@@ -2662,7 +2662,11 @@ export function IPTVClient() {
 
                 {activeTab === "live" && currentPlayerChannel ? (
                   <div className="card live-preview-player">
-                    <IPTVPlayer channel={currentPlayerChannel} />
+                    <IPTVPlayer
+                      channel={currentPlayerChannel}
+                      quickChannels={filteredChannels}
+                      onChannelChange={(nextChannel) => selectChannel(nextChannel)}
+                    />
                   </div>
                 ) : null}
 

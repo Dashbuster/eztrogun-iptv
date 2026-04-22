@@ -828,6 +828,199 @@ button {
   background: #000;
 }
 
+.osd-video-frame {
+  min-height: clamp(360px, 68vh, 82vh);
+  background:
+    radial-gradient(circle at 78% 22%, rgba(34, 183, 255, 0.16), transparent 18%),
+    linear-gradient(180deg, #06090f, #04060b);
+}
+
+.osd-video-frame video {
+  object-fit: contain;
+}
+
+.player-osd {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  padding: 22px;
+  transition: opacity 220ms ease, visibility 220ms ease;
+  pointer-events: none;
+}
+
+.player-osd.visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+.player-osd.hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.player-osd-top,
+.player-osd-bottom,
+.player-quick-list {
+  pointer-events: auto;
+}
+
+.player-osd-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+}
+
+.player-title-glass {
+  display: grid;
+  gap: 6px;
+  max-width: min(520px, 80%);
+  padding: 16px 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(7, 10, 16, 0.46);
+  backdrop-filter: blur(18px);
+}
+
+.player-title-glass span {
+  color: var(--muted);
+}
+
+.player-osd-bottom {
+  align-self: end;
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border-radius: 26px;
+  background: linear-gradient(180deg, rgba(8, 10, 14, 0.16), rgba(8, 10, 14, 0.78));
+  backdrop-filter: blur(16px);
+}
+
+.player-timeline-shell {
+  width: 100%;
+}
+
+.player-timeline,
+.player-volume-slider {
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #29c5ff 0, #7d63ff var(--progress, 0%), rgba(255, 255, 255, 0.12) var(--progress, 0%), rgba(255, 255, 255, 0.12) 100%);
+  outline: none;
+}
+
+.player-volume-slider {
+  --progress: 100%;
+  width: 120px;
+}
+
+.player-timeline::-webkit-slider-thumb,
+.player-volume-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 0 18px rgba(41, 197, 255, 0.3);
+}
+
+.player-controls-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.player-controls-left,
+.player-controls-right,
+.player-volume-shell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.player-icon-button {
+  min-width: 48px;
+  height: 48px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.player-icon-button:hover {
+  background: linear-gradient(135deg, rgba(34, 183, 255, 0.2), rgba(139, 61, 255, 0.24));
+  border-color: rgba(34, 183, 255, 0.32);
+}
+
+.player-icon-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.player-time-readout {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.player-quick-list {
+  align-self: center;
+  justify-self: end;
+  width: min(360px, 42vw);
+  max-height: 62%;
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(7, 10, 16, 0.46);
+  backdrop-filter: blur(24px);
+  box-shadow: 0 24px 54px rgba(0, 0, 0, 0.3);
+}
+
+.player-quick-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.player-quick-head span {
+  color: var(--muted);
+}
+
+.player-quick-items {
+  display: grid;
+  gap: 10px;
+  overflow: auto;
+}
+
+.player-quick-item {
+  width: 100%;
+  text-align: left;
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--ink);
+}
+
+.player-quick-item span {
+  color: var(--muted);
+}
+
+.player-quick-item.active,
+.player-quick-item:hover {
+  border-color: rgba(34, 183, 255, 0.32);
+  background: linear-gradient(135deg, rgba(34, 183, 255, 0.2), rgba(139, 61, 255, 0.22));
+}
+
 .player-footer {
   display: flex;
   justify-content: space-between;
@@ -1896,6 +2089,38 @@ button {
 }
 
 @media (max-width: 720px) {
+  .player-osd {
+    padding: 14px;
+  }
+
+  .player-osd-bottom {
+    padding: 14px;
+    border-radius: 20px;
+  }
+
+  .player-controls-row,
+  .player-controls-left,
+  .player-controls-right {
+    width: 100%;
+  }
+
+  .player-controls-row {
+    display: grid;
+    gap: 12px;
+  }
+
+  .player-controls-left,
+  .player-controls-right {
+    flex-wrap: wrap;
+  }
+
+  .player-quick-list {
+    width: 100%;
+    justify-self: stretch;
+    align-self: end;
+    max-height: 46%;
+  }
+
   .cinematic-detail-screen {
     padding: 16px;
     border-radius: 24px;
