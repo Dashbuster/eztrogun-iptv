@@ -583,18 +583,20 @@ export function IPTVClient() {
   const visibleChannels = filteredChannels.slice(virtualStartIndex, virtualEndIndex);
   const topSpacerHeight = virtualStartIndex * CHANNEL_ROW_HEIGHT;
   const bottomSpacerHeight = Math.max(0, totalVirtualHeight - virtualEndIndex * CHANNEL_ROW_HEIGHT);
-  const mediaGridRowCount = Math.ceil(filteredChannels.length / gridColumns);
-  const mediaGridTotalHeight = mediaGridRowCount * MEDIA_GRID_CARD_HEIGHT;
+  const mediaGridColumns = activeTab === "live" ? gridColumns : Math.max(1, Math.min(gridColumns, 2));
+  const mediaGridRowCountAdjusted = Math.ceil(filteredChannels.length / mediaGridColumns);
+  const mediaGridTotalHeight = mediaGridRowCountAdjusted * MEDIA_GRID_CARD_HEIGHT;
   const mediaGridStartRow = Math.max(0, Math.floor(listScrollTop / MEDIA_GRID_CARD_HEIGHT) - MEDIA_GRID_OVERSCAN);
   const mediaGridVisibleRows =
     Math.ceil(CHANNEL_LIST_HEIGHT / MEDIA_GRID_CARD_HEIGHT) + MEDIA_GRID_OVERSCAN * 2;
-  const mediaGridEndRow = Math.min(mediaGridRowCount, mediaGridStartRow + mediaGridVisibleRows);
+  const mediaGridEndRow = Math.min(mediaGridRowCountAdjusted, mediaGridStartRow + mediaGridVisibleRows);
   const mediaGridVisibleChannels = filteredChannels.slice(
-    mediaGridStartRow * gridColumns,
-    mediaGridEndRow * gridColumns
+    mediaGridStartRow * mediaGridColumns,
+    mediaGridEndRow * mediaGridColumns
   );
   const mediaGridTopSpacerHeight = mediaGridStartRow * MEDIA_GRID_CARD_HEIGHT;
   const mediaGridBottomSpacerHeight = Math.max(0, mediaGridTotalHeight - mediaGridEndRow * MEDIA_GRID_CARD_HEIGHT);
+  const itemBrowserCount = activeTab === "series" ? seriesEntries.length : filteredChannels.length;
 
   const selectedChannel = resolvedSelectedId ? catalogIndex.byId.get(resolvedSelectedId) || null : null;
 
@@ -1389,7 +1391,7 @@ export function IPTVClient() {
               <div className="items-column">
                 <div className="browser-titlebar">
                   <strong>{activeGroup === "all" ? "Todos os grupos" : activeGroup}</strong>
-                  <span>{filteredChannels.length}</span>
+                  <span>{itemBrowserCount}</span>
                 </div>
 
                 {activeTab === "live" ? (
@@ -1456,13 +1458,15 @@ export function IPTVClient() {
                   <div className="media-grid-shell">
                     <div
                       className="media-grid media-grid-large"
-                      style={{ gridTemplateColumns: `repeat(${gridColumns}, minmax(0, 1fr))` }}
+                      style={{ gridTemplateColumns: `repeat(${mediaGridColumns}, minmax(0, 1fr))` }}
                     >
                       {seriesEntries.map((entry) => (
                         <button
                           key={entry.key}
                           type="button"
-                          className={`media-card media-card-large ${entry.key === activeSeries?.key ? "active" : ""}`}
+                          className={`media-card media-card-large media-card-featured ${
+                            entry.key === activeSeries?.key ? "active" : ""
+                          }`}
                           onClick={() => {
                             setActiveSeriesKey(entry.key);
                             setSelectedId(entry.episodes[0]?.id ?? null);
@@ -1498,13 +1502,15 @@ export function IPTVClient() {
                     <div style={{ height: mediaGridTopSpacerHeight }} aria-hidden="true" />
                     <div
                       className="media-grid media-grid-large"
-                      style={{ gridTemplateColumns: `repeat(${gridColumns}, minmax(0, 1fr))` }}
+                      style={{ gridTemplateColumns: `repeat(${mediaGridColumns}, minmax(0, 1fr))` }}
                     >
                       {mediaGridVisibleChannels.map((channel) => (
                         <button
                           key={channel.id}
                           type="button"
-                          className={`media-card media-card-large ${channel.id === selectedChannel?.id ? "active" : ""}`}
+                          className={`media-card media-card-large media-card-featured ${
+                            channel.id === selectedChannel?.id ? "active" : ""
+                          }`}
                           onClick={() => selectChannel(channel)}
                         >
                           <div className="media-card-poster">
@@ -1587,6 +1593,24 @@ export function IPTVClient() {
                       <strong>Temporadas</strong>
                       <span>{activeSeries?.seasons.length || 0}</span>
                     </div>
+
+                    {activeSeries?.seasons.length ? (
+                      <div className="season-chip-row">
+                        {activeSeries.seasons.map((season) => (
+                          <button
+                            key={season.label}
+                            type="button"
+                            className={`season-chip ${
+                              season.episodes.some((episode) => episode.id === selectedChannel?.id) ? "active" : ""
+                            }`}
+                            onClick={() => selectChannel(season.episodes[0] || null)}
+                          >
+                            <strong>{season.label}</strong>
+                            <span>{season.episodes.length} eps</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
 
                     <div className="timeline-list">
                       {activeSeries ? (
