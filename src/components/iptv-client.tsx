@@ -339,39 +339,56 @@ function getCatalogDescription(channel: IPTVChannel | null, epgDescription?: str
   return `${channel.name} esta organizado em ${channel.group || "Series"} para navegacao por categoria.`;
 }
 
+function getInitialBootPlaylistState() {
+  const savedPlaylists = readStorage<SavedPlaylist[]>(PLAYLISTS_STORAGE_KEY, []).map((playlist) => ({
+    ...playlist,
+    content: playlist.source === "text" ? playlist.content || "" : ""
+  }));
+  const activePlaylistId = readStorage<string | null>(ACTIVE_PLAYLIST_STORAGE_KEY, null);
+  const cachedChannels = activePlaylistId ? readPlaylistCache(activePlaylistId)?.channels || [] : [];
+  const activePlaylist = activePlaylistId
+    ? savedPlaylists.find((playlist) => playlist.id === activePlaylistId) || null
+    : null;
+  const activeTab = cachedChannels[0]?.catalog || "live";
+
+  return {
+    savedPlaylists,
+    activePlaylistId,
+    channels: cachedChannels,
+    activePanel: cachedChannels.length ? ("catalog" as const) : ("none" as const),
+    activeTab,
+    activeGroup: cachedChannels.length ? getPreferredGroup(cachedChannels, activeTab) : "all",
+    status: activePlaylist ? `Playlist ${activePlaylist.name} restaurada do cache local.` : "Cadastre uma playlist para começar."
+  };
+}
+
 export function IPTVClient() {
   const parserWorkerRef = useRef<Worker | null>(null);
   const restoredPlaylistRef = useRef(false);
+  const [bootPlaylistState] = useState(() => getInitialBootPlaylistState());
   const [favoriteIds, setFavoriteIds] = useState<string[]>(() => readStorage(FAVORITES_STORAGE_KEY, []));
   const [recentIds, setRecentIds] = useState<string[]>(() => readStorage(RECENT_STORAGE_KEY, []));
   const [accessProfile, setAccessProfile] = useState<AccessProfile>(() =>
     readStorage(ACCESS_STORAGE_KEY, getEmptyAccessProfile())
   );
-  const [savedPlaylists, setSavedPlaylists] = useState<SavedPlaylist[]>(() =>
-    readStorage<SavedPlaylist[]>(PLAYLISTS_STORAGE_KEY, []).map((playlist) => ({
-      ...playlist,
-      content: playlist.source === "text" ? playlist.content || "" : ""
-    }))
-  );
+  const [savedPlaylists, setSavedPlaylists] = useState<SavedPlaylist[]>(() => bootPlaylistState.savedPlaylists);
   const [playlistName, setPlaylistName] = useState("");
   const [playlistInput, setPlaylistInput] = useState("");
   const [playlistUrl, setPlaylistUrl] = useState("");
   const [playlistEpgUrl, setPlaylistEpgUrl] = useState("");
   const [editingPlaylistId, setEditingPlaylistId] = useState<string | null>(null);
-  const [channels, setChannels] = useState<IPTVChannel[]>([]);
+  const [channels, setChannels] = useState<IPTVChannel[]>(() => bootPlaylistState.channels);
   const [epgIndex, setEpgIndex] = useState<EPGIndex | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [activePlaylistId, setActivePlaylistId] = useState<string | null>(() =>
-    readStorage<string | null>(ACTIVE_PLAYLIST_STORAGE_KEY, null)
-  );
-  const [status, setStatus] = useState("Cadastre uma playlist para começar.");
+  const [activePlaylistId, setActivePlaylistId] = useState<string | null>(() => bootPlaylistState.activePlaylistId);
+  const [status, setStatus] = useState(bootPlaylistState.status);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [epgLoading, setEpgLoading] = useState(false);
   const [query, setQuery] = useState("");
-  const [activeGroup, setActiveGroup] = useState("all");
-  const [activeTab, setActiveTab] = useState<CatalogTab>("live");
-  const [activePanel, setActivePanel] = useState<HomePanel>("none");
+  const [activeGroup, setActiveGroup] = useState(bootPlaylistState.activeGroup);
+  const [activeTab, setActiveTab] = useState<CatalogTab>(bootPlaylistState.activeTab);
+  const [activePanel, setActivePanel] = useState<HomePanel>(bootPlaylistState.activePanel);
   const [activeSeriesKey, setActiveSeriesKey] = useState<string | null>(null);
   const [activeSeasonNumber, setActiveSeasonNumber] = useState<number | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
@@ -598,11 +615,11 @@ export function IPTVClient() {
   }, [filteredChannels]);
 
   const activeSeries = useMemo(() => {
-    if (activeTab !== "series" || seriesEntries.length === 0) {
+    if (activeTab !== "series" || !activeSeriesKey) {
       return null;
     }
 
-    return seriesEntries.find((entry) => entry.key === activeSeriesKey) || seriesEntries[0];
+    return seriesEntries.find((entry) => entry.key === activeSeriesKey) || null;
   }, [activeSeriesKey, activeTab, seriesEntries]);
 
   const resolvedSelectedId = useMemo(() => {
@@ -716,7 +733,7 @@ export function IPTVClient() {
   const focusedMovie = activeTab === "movie" ? selectedChannel : null;
   const focusedSeries = activeTab === "series" ? activeSeries : null;
   const isFocusedMediaDetail = Boolean(focusedMovie || focusedSeries);
-  const currentPlayerChannel = activeTab === "live" ? selectedChannel : playingChannel;
+  const currentPlayerChannel = activeTab === "live" ? selectedChannel : null;
 
   function rememberRecentChannel(channel: IPTVChannel | null) {
     if (!channel) {
@@ -1091,6 +1108,11 @@ export function IPTVClient() {
       return;
     }
 
+    if (channels.length && activePlaylistId) {
+      restoredPlaylistRef.current = true;
+      return;
+    }
+
     restoredPlaylistRef.current = true;
 
     if (!savedPlaylists.length || !activePlaylistId) {
@@ -1109,7 +1131,7 @@ export function IPTVClient() {
     }, 0);
 
     return () => window.clearTimeout(restoreTimer);
-  }, [activePlaylistId, savedPlaylists]);
+  }, [activePlaylistId, channels.length, savedPlaylists]);
 
   function deletePlaylist(playlistId: string) {
     const playlistToRemove = savedPlaylists.find((playlist) => playlist.id === playlistId);
@@ -1649,50 +1671,62 @@ export function IPTVClient() {
                     <button type="button" className="ghost-button focused-back" onClick={closeFocusedCatalogView}>
                       Voltar para filmes
                     </button>
-                    <div className={`focused-media-poster ${focusedMovie.logo ? "has-image" : ""}`}>
-                      {focusedMovie.logo ? (
-                        /* eslint-disable-next-line @next/next/no-img-element */
-                        <img src={focusedMovie.logo} alt={focusedMovie.name} loading="lazy" />
-                      ) : null}
-                      <div className="focused-media-overlay">
-                        <span>Filme</span>
-                        <strong>{focusedMovie.name}</strong>
-                        <small>{focusedMovie.group || "Sem categoria"}</small>
-                        <div className="focused-media-actions">
-                          <button type="button" onClick={openMoviePlayback}>
-                            Play
-                          </button>
+                    {playingChannel?.id === focusedMovie.id ? (
+                      <div className="card inline-player-card">
+                        <IPTVPlayer channel={playingChannel} />
+                      </div>
+                    ) : (
+                      <div className={`focused-media-poster ${focusedMovie.logo ? "has-image" : ""}`}>
+                        {focusedMovie.logo ? (
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img src={focusedMovie.logo} alt={focusedMovie.name} loading="lazy" />
+                        ) : null}
+                        <div className="focused-media-overlay">
+                          <span>Filme</span>
+                          <strong>{focusedMovie.name}</strong>
+                          <small>{focusedMovie.group || "Sem categoria"}</small>
+                          <div className="focused-media-actions">
+                            <button type="button" className="play-inside-poster" onClick={openMoviePlayback}>
+                              Play
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    )}
                   </div>
                 ) : activeTab === "series" && focusedSeries ? (
                   <div className="focused-media-screen focused-series-screen">
                     <button type="button" className="ghost-button focused-back" onClick={closeFocusedCatalogView}>
                       Voltar para series
                     </button>
-                    <div className={`focused-media-poster ${focusedSeries.logo ? "has-image" : ""}`}>
-                      {focusedSeries.logo ? (
-                        /* eslint-disable-next-line @next/next/no-img-element */
-                        <img src={focusedSeries.logo} alt={focusedSeries.title} loading="lazy" />
-                      ) : null}
-                      <div className="focused-media-overlay">
-                        <span>Serie</span>
-                        <strong>{focusedSeries.title}</strong>
-                        <small>{focusedSeries.group || "Sem categoria"}</small>
-                        <div className="focused-media-metrics">
-                          <span>{focusedSeries.seasons.length} temporadas</span>
-                          <span>{focusedSeries.episodes.length} episodios</span>
-                        </div>
-                        {selectedChannel ? (
-                          <div className="focused-media-actions">
-                            <button type="button" onClick={openSeriesPlayback}>
-                              Play episodio
-                            </button>
-                          </div>
-                        ) : null}
+                    {playingChannel?.id === selectedChannel?.id && selectedChannel?.catalog === "series" ? (
+                      <div className="card inline-player-card">
+                        <IPTVPlayer channel={playingChannel} />
                       </div>
-                    </div>
+                    ) : (
+                      <div className={`focused-media-poster ${focusedSeries.logo ? "has-image" : ""}`}>
+                        {focusedSeries.logo ? (
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img src={focusedSeries.logo} alt={focusedSeries.title} loading="lazy" />
+                        ) : null}
+                        <div className="focused-media-overlay">
+                          <span>Serie</span>
+                          <strong>{focusedSeries.title}</strong>
+                          <small>{focusedSeries.group || "Sem categoria"}</small>
+                          <div className="focused-media-metrics">
+                            <span>{focusedSeries.seasons.length} temporadas</span>
+                            <span>{focusedSeries.episodes.length} episodios</span>
+                          </div>
+                          {selectedChannel ? (
+                            <div className="focused-media-actions">
+                              <button type="button" className="play-inside-poster" onClick={openSeriesPlayback}>
+                                Play
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    )}
 
                     <div className="series-detail-layout">
                       <div className="epg-panel">
